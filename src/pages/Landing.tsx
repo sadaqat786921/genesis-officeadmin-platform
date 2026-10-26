@@ -71,6 +71,17 @@ function PhoneHome() {
     <div className="ph-nav"><span className="on"><Home size={15} /></span><span><PoundSterling size={15} /></span><span><Wrench size={15} /></span><span><FileText size={15} /></span></div>
   </div>;
 }
+function PhoneTenant() {
+  return <div className="ph-scr">
+    <div className="ph-top"><img src="images/av1.jpg" alt="" /><div><span>Good evening</span><b>Sam</b></div><span className="ph-bell"><Bell size={15} /><i /></span></div>
+    <div className="ph-hero green"><span>Next rent · November</span><b>£1,150</b><em>Due 5 Nov · standing order</em><span className="ph-paid"><CircleCheck size={11} />October paid</span></div>
+    <div className="ph-row2"><div className="act"><span className="tile t-warn"><Wrench size={14} /></span><b>Report a repair</b></div><div className="act"><span className="tile t-ok"><PoundSterling size={14} /></span><b>Rent and receipts</b></div></div>
+    <div className="ph-card"><span className="tile t-info"><Wrench size={14} /></span><div><b>Boiler repair</b><em>Thu 16 Oct · 9–11am</em></div><span className="ph-chip">Booked</span></div>
+    <div className="ph-label">Your home</div>
+    <div className="ph-home"><div style={{ backgroundImage: 'url(images/home3.jpg)' }} /><div><b>14 Elm Road</b><em>Until 4 May 2027</em></div><ChevronRight size={14} /></div>
+    <div className="ph-nav"><span className="on"><Home size={15} /></span><span><PoundSterling size={15} /></span><span><Wrench size={15} /></span><span><FileText size={15} /></span></div>
+  </div>;
+}
 function PhoneApprove() {
   return <div className="ph-scr">
     <div className="ph-bar"><ChevronRight size={15} style={{ transform: 'rotate(180deg)' }} /><b>Approve repair</b><span /></div>
@@ -169,10 +180,9 @@ export default function Landing() {
           <ul>{[[LineChart, 'Live rent and repair budget'], [ShieldCheck, 'Every certificate with its end date'], [Wrench, 'Approve repairs over your limit in one tap'], [ClipboardCheck, 'Inspection reports with dated photos']].map(([Ic, t]) => { const I = Ic as typeof Home; return <li key={t as string}><span><I size={16} /></span>{t as string}</li>; })}</ul>
           <div className="lp-hero-cta"><button className="btn accent lp-big" onClick={() => setWl(true)}>Landlord Portal <span className="lp-soon-chip">Soon</span></button><button className="btn lp-ghost lp-big" onClick={() => setWl(true)}>Tenant Portal <span className="lp-soon-chip">Soon</span></button></div>
         </div>
-        <div className="lp-phones">
-          <div className="phone p-left"><span className="ph-notch" /><PhoneCerts /></div>
-          <div className="phone p-mid"><span className="ph-notch" /><PhoneHome /></div>
-          <div className="phone p-right"><span className="ph-notch" /><PhoneApprove /></div>
+        <div className="lp-phones two">
+          <div className="ph-wrap pa"><div className="phone"><span className="ph-notch" /><PhoneHome /></div><span className="ph-tag">Landlord app</span></div>
+          <div className="ph-wrap pb"><div className="phone"><span className="ph-notch" /><PhoneTenant /></div><span className="ph-tag green">Tenant app</span></div>
         </div>
       </div>
     </section>

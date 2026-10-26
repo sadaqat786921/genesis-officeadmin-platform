@@ -3,7 +3,7 @@ import { Inbox, UserCheck, PhoneCall, Mail, CheckCircle2, XCircle, ShieldCheck, 
 import { useStore, useLookups, money } from '../store';
 import { nowStamp, SUPERVISOR, ME, type Comm, type Enquiry } from '../data';
 import { ME_NAME } from '../data';
-import { ActionCard, Avatar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, HSteps, KV, Kpi, MiniSearch, Modal, Note, Select, Tabs, When, Empty, Area } from '../ui';
+import { ActionCard, Avatar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, HSteps, KV, Kpi, MiniSearch, Modal, Note, Select, Tabs, When, Empty, Area, Text, dateLabel } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { adminName, firstName } from './shared';
 import { AskNewLandlord } from './Landlords';
@@ -120,16 +120,27 @@ function MoveToLettings({ e, onClose }: { e: Enquiry; onClose: () => void }) {
   const s = useStore(); const L = useLookups();
   const homes = s.properties.filter(p => p.managed && p.status !== 'Let');
   const [prop, setProp] = useState(e.property ?? homes[0]?.id ?? ''); const [room, setRoom] = useState('Room 1'); const admin = ME;
+  const [d, setD] = useState({ household: '', moveIn: '', budget: '', work: '', income: '', pets: 'None', current: '' });
   const p = L.prop(prop);
-  return <Modal title="Move to Lettings" sub={`${e.name} becomes a new applicant in the Applied column.`} onClose={onClose}
+  return <Modal wide title="Move to Lettings" sub={`${e.name} becomes a new applicant in the Applied column. Fill in what you learned on the call, so the applicant profile is complete.`} onClose={onClose}
     footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn icon={<KeyRound size={16} />} onClick={() => {
       const aid = 'AP' + Date.now() % 10000;
-      s.setApplicants(ap => [{ id: aid, name: e.name, email: e.email, phone: e.phone, property: prop, room: p?.type === 'HMO' ? room : undefined, stage: 0, source: 'Enquiry', admin, applied: nowStamp(), since: '15 Oct 2026', household: '—', budget: p?.type === 'HMO' ? 440 : p?.rent ?? 0, moveIn: '—', employment: '—', income: 0, pets: '—', current: '—', portal: false, kyc: ['Photo ID (passport or driving licence)', 'Proof of address', 'Right to rent share code', 'Proof of income (3 payslips)', 'Bank statements (3 months)'].map(n => ({ name: n, status: 'Missing' as const })), checks: { deposit: false, contract: false, reference: 'Not started' }, deposit: Math.round((p?.type === 'HMO' ? 440 : p?.rent ?? 0) * 12 / 52 * 5), comms: e.comms }, ...ap]);
+      s.setApplicants(ap => [{ id: aid, name: e.name, email: e.email, phone: e.phone, property: prop, room: p?.type === 'HMO' ? room : undefined, stage: 0, source: 'Enquiry', admin, applied: nowStamp(), since: '15 Oct 2026', household: d.household.trim() || '—', budget: +d.budget || (p?.type === 'HMO' ? 440 : p?.rent ?? 0), moveIn: d.moveIn ? dateLabel(d.moveIn) : '—', employment: d.work.trim() || '—', income: +d.income || 0, pets: d.pets.trim() || '—', current: d.current.trim() || '—', portal: false, kyc: ['Photo ID (passport or driving licence)', 'Proof of address', 'Right to rent share code', 'Proof of income (3 payslips)', 'Bank statements (3 months)'].map(n => ({ name: n, status: 'Missing' as const })), checks: { deposit: false, contract: false, reference: 'Not started' }, deposit: Math.round((p?.type === 'HMO' ? 440 : p?.rent ?? 0) * 12 / 52 * 5), comms: e.comms }, ...ap]);
       s.setEnquiries(es => es.map(x => x.id === e.id ? { ...x, stage: 'Converted', converted: aid, admin, comms: [...x.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'System', text: 'Moved to Lettings as a new applicant.' }] } : x));
       s.log(`${e.name} moved from Enquiries to Lettings`, 'Lettings'); s.toast(`${e.name} is now in Lettings`); onClose(); s.go('lettings', aid);
     }}>Move to Lettings</Btn></>}>
     <Field label="Home they want"><Select value={prop} onChange={setProp} options={homes.map(h => ({ value: h.id, label: `${h.address} · ${h.status}` }))} /></Field>
     {p?.type === 'HMO' && <Field label="Room"><Select value={room} onChange={setRoom} options={Array.from({ length: p.rooms ?? 0 }, (_, i) => `Room ${i + 1}`).map(r => ({ value: r, label: r }))} /></Field>}
+    <div className="sec-label">About the applicant · from your conversation</div>
+    <div className="grid g2">
+      <Field label="Household"><Text value={d.household} onChange={v => setD({ ...d, household: v })} placeholder="e.g. 2 adults, 1 child" /></Field>
+      <Field label="Wants to move in"><input className="input" type="date" value={d.moveIn} onChange={ev => setD({ ...d, moveIn: ev.target.value })} /></Field>
+      <Field label="Budget (£ pcm)"><Text value={d.budget} onChange={v => setD({ ...d, budget: v })} placeholder={String(p?.type === 'HMO' ? 440 : p?.rent ?? '')} /></Field>
+      <Field label="Work"><Text value={d.work} onChange={v => setD({ ...d, work: v })} placeholder="e.g. Nurse, Leeds General Infirmary" /></Field>
+      <Field label="Yearly income (£)"><Text value={d.income} onChange={v => setD({ ...d, income: v })} placeholder="e.g. 32000" /></Field>
+      <Field label="Pets"><Text value={d.pets} onChange={v => setD({ ...d, pets: v })} placeholder="None" /></Field>
+    </div>
+    <Field label="Lives now at"><Text value={d.current} onChange={v => setD({ ...d, current: v })} placeholder="Current address" /></Field>
     <Note>You stay the Office Admin for this applicant.</Note>
     <Note>Their calls, emails and notes move with them.</Note>
   </Modal>;
