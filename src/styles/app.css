@@ -797,3 +797,10 @@ tr.static { cursor: default; } tr.static:hover td { background: none; }
 .ph-chip { font-size: 8.5px; font-weight: 700; color: var(--info); background: var(--info-bg); padding: 3px 7px; border-radius: 999px; }
 .ph-doc.mini { margin: 8px 12px 0; padding: 7px; }
 @media (max-width: 640px) { .lp-phones.two { flex-direction: column; align-items: center; gap: 28px; } .lp-phones.two .pb { margin-top: 0; } }
+
+.lp-small { font-size: 13px; line-height: 1.6; color: var(--text-tertiary); margin-top: 22px !important; }
+#switch .lp-next { margin-top: 24px; } #switch .lp-small { text-align: left; }
+.lp-plans.four { grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.lp-plans.four .lp-plan { padding-left: 22px; padding-right: 22px; }
+@media (max-width: 1180px) { .lp-plans.four { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .lp-plans.four { grid-template-columns: 1fr; } }

@@ -7,6 +7,7 @@ import { Toasts } from './ui';
 import Today from './pages/Today';
 import { Tasks } from './pages/Tasks';
 import { Enquiries } from './pages/Enquiries';
+import { Switch } from './pages/Switch';
 import { Landlords } from './pages/Landlords';
 import { Lettings } from './pages/Lettings';
 import { Tenants } from './pages/Tenants';
@@ -20,7 +21,7 @@ import { Safety } from './pages/Safety';
 import { Rent } from './pages/Rent';
 import { Records } from './pages/Records';
 
-const PAGES = { today: Today, tasks: Tasks, enquiries: Enquiries, landlords: Landlords, lettings: Lettings, tenants: Tenants, properties: Properties, clients: Clients, contractors: Contractors, jobs: Jobs, inspections: Inspections, requests: Requests, safety: Safety, rent: Rent, records: Records };
+const PAGES = { today: Today, tasks: Tasks, enquiries: Enquiries, switch: Switch, landlords: Landlords, lettings: Lettings, tenants: Tenants, properties: Properties, clients: Clients, contractors: Contractors, jobs: Jobs, inspections: Inspections, requests: Requests, safety: Safety, rent: Rent, records: Records };
 
 const KEY = 'genesis-oa-signed-in';
 const read = () => { try { return sessionStorage.getItem(KEY) === '1'; } catch { return false; } };

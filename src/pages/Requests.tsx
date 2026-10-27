@@ -5,6 +5,7 @@ import { PLAN, nowStamp, ME, ME_NAME, SUPERVISOR, type Comm, type ReqKind, type 
 import { ActionCard, Avatar, Bar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, KV, Kpi, Modal, Note, PageTabs, Reason, Select, Tabs, Timeline, Empty, Area, Text, When, sortComms } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { HomeCard, adminName, approveJob, jobEvent, jobTone } from './shared';
+import { linkLeadLandlord } from './Switch';
 
 type S = ReturnType<typeof useStore>;
 
@@ -35,6 +36,7 @@ export function answerRequest(s: S, q: SupReq, ok: boolean, reply: string) {
     s.setLandlords(ls => [...ls, { id: lid, name: q.data!.name, email: q.data!.email, phone: q.data!.phone, billing: q.data!.billing ?? '—', plan: (+q.data!.plan || 16) as 12 | 16 | 20, start: '15 Oct 2026', admin: ME, status: 'Invite sent', bank: '—', comms: [{ id: 'cm' + Date.now(), at: nowStamp(), by: SUPERVISOR, channel: 'Email', dir: 'out', subject: 'Your LSP account', text: 'Login email sent from Outlook.' }] }]);
     if (q.data.enquiry) s.setEnquiries(es => es.map(e => e.id === q.data!.enquiry ? { ...e, stage: 'Converted', converted: lid, comms: [...e.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: SUPERVISOR, channel: 'System', text: 'Landlord account created by the Supervisor. Login email sent.' }] } : e));
     s.setRequests(rs => rs.map(x => x.id === q.id ? { ...x, link: { route: 'landlords', id: lid } } : x));
+    if (q.data.lead) linkLeadLandlord(s, q.data.lead, lid);
   }
   s.log(`${SUPERVISOR} ${ok ? 'did' : 'declined'}: ${q.title}${reply ? '. ' + reply : ''}`, 'Sent to Supervisor');
   s.toast(`${SUPERVISOR} ${ok ? 'said yes' : 'said no'}`);

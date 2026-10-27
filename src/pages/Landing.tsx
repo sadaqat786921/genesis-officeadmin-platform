@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Home, PoundSterling, Wrench, ShieldCheck, KeyRound, ClipboardCheck, ArrowRight, Check, CircleCheck, Menu, X, Star, LineChart, Send, Plus, Minus, Bell, ChevronRight, CalendarDays, FileText, Sparkles, Users, Building2 } from 'lucide-react';
+import { useStore } from '../store';
+import { nowStamp, type Lead } from '../data';
+import { leadFromWebsite, AREAS } from './Switch';
 
-const NAV = [['services', 'Services'], ['plans', 'Plans'], ['how', 'How it works'], ['about', 'About'], ['contact', 'Contact']] as const;
+const NAV = [['services', 'Services'], ['plans', 'Plans'], ['how', 'How it works'], ['switch', 'Planned Switch'], ['about', 'About'], ['contact', 'Contact']] as const;
 
 const SERVICES = [
   { ic: Home, t: 'Full management & Maintenance', d: 'We look after your home from tenant to keys back, so you don’t have to take the calls.', top: true },
@@ -13,6 +16,7 @@ const SERVICES = [
 ];
 
 const PLANS = [
+  { p: 10, limit: 0, t: 'Management Only', d: 'For landlords who arrange and pay for repairs themselves.', f: ['Landlord & Tenant Portal', 'Tenant Find & Referencing', 'Rent collection and reminders', 'Safety checks tracked', 'Routine Inspection & Photos', 'Repairs arranged and charged separately'] },
   { p: 12, limit: 150, t: 'Essential', d: 'For landlords who like to stay close to every decision.', f: ['Landlord & Tenant Portal', 'Tenant Find & Referencing', 'Rent collection and reminders', 'Safety checks tracked', 'Repairs up to £150 Labour Only', 'Routine Inspection & Photos'] },
   { p: 16, limit: 200, t: 'Complete', d: 'Our most chosen plan. Hands-off, with full visibility.', f: ['Landlord & Tenant Portal', 'Tenant Find & Referencing', 'Rent collection and reminders', 'Repairs up to £200 Labour & Materials', 'Safety checks tracked', 'Repairs up to £150 Labour Only'], top: true },
   { p: 20, limit: 300, t: 'Premium', d: 'For portfolios and shared houses that need the most care.', f: ['Everything in Complete', 'Tenant Find & Referencing', 'HMO licence management', 'Repairs up to £300 Labour & Materials', 'Regular Works e.g Gardening, Cleaning & Window Cleaning'] },
@@ -104,6 +108,55 @@ function PhoneCerts() {
   </div>;
 }
 
+
+/* ---------- Planned Switch: for landlords who already pay a managing agent ---------- */
+function PlannedSwitch() {
+  const s = useStore();
+  const blank = { name: '', email: '', phone: '', contactPref: 'Phone' as Lead['contactPref'], area: 'Islington', homes: '1', agentNow: 'Yes', agent: '', timeframe: 'Not sure', reason: '', permission: false };
+  const [f, setF] = useState(blank); const [sent, setSent] = useState<'' | 'switch' | 'enquiry'>('');
+  const submit = () => {
+    if (f.agentNow === 'Yes') { leadFromWebsite(s, f); setSent('switch'); return; }
+    s.setEnquiries(es => [{ id: 'E' + (100 + es.length), name: f.name, email: f.email, phone: f.phone, kind: 'Landlord', about: `${f.homes} home${f.homes === '1' ? '' : 's'} in ${f.area}`, message: f.reason || 'Wants LSP to manage their homes.', received: nowStamp(), source: 'Website form', stage: 'New', comms: [] }, ...es]);
+    s.log(`New landlord enquiry from the website: ${f.name}`, 'Enquiries'); setSent('enquiry');
+  };
+  return <section className="lp-sec" id="switch">
+    <div className="lp-wrap lp-contact">
+      <div className="lp-contact-info">
+        <span className="lp-eyebrow green">LSP Planned Switch</span>
+        <h2>Already have a managing agent? Plan your move to LSP.</h2>
+        <p>Unhappy with your current agent but tied into a contract? We look at your agreement with you, work out the right time to move, and plan an orderly handover. No pressure, and nothing happens without your say-so.</p>
+        <div className="lp-next">{[
+          ['Free eligibility check', 'A short call about your property, your current agent and your timing.'],
+          ['We check your agreement', 'Notice period, end date and any fees that may continue after you leave.'],
+          ['A clear plan', 'Move now, or later at the right time. We remind you before your notice deadline.'],
+          ['Handover when it suits', 'Keys, deposit, certificates and open repairs handed over, then a 30-day check.'],
+        ].map(([t, d], i) => <div key={t}><span>{i + 1}</span><div><b>{t}</b><em>{d}</em></div></div>)}</div>
+        <p className="lp-small">North London only for now. Eligibility and terms apply. Some agents' fees, such as tenant-find commission, can continue after you leave, so we never promise a fee-free exit or guaranteed savings. Legal questions go to a qualified professional.</p>
+      </div>
+      <div className="lp-form card">
+        {sent ? <div className="lp-sent"><span className="lp-soon-ic ok"><Check size={26} /></span><h3>Thanks, {f.name.split(' ')[0] || 'we got it'}!</h3><p>{sent === 'switch' ? "You're on the Planned Switch waiting list. We'll be in touch to talk about your current agreement and the right time to move." : "As you don't have a managing agent, we've passed this to our team as a normal enquiry. We'll call you to talk about your homes."}</p><button className="btn line" onClick={() => { setSent(''); setF(blank); }}>Send another</button></div> :
+          <form onSubmit={e => { e.preventDefault(); submit(); }}>
+            <h3>Join the Planned Switch waiting list</h3>
+            <div className="grid g2" style={{ gap: 14 }}>
+              <label className="field"><span>Full name</span><input className="input" required value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Your name" /></label>
+              <label className="field"><span>Best way to contact you</span><select className="input" value={f.contactPref} onChange={e => setF({ ...f, contactPref: e.target.value as Lead['contactPref'] })}>{['Phone', 'Email', 'WhatsApp'].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label className="field"><span>Email</span><input className="input" type="email" required value={f.email} onChange={e => setF({ ...f, email: e.target.value })} placeholder="you@email.co.uk" /></label>
+              <label className="field"><span>Phone</span><input className="input" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} placeholder="07700 900000" /></label>
+              <label className="field"><span>North London area</span><select className="input" value={f.area} onChange={e => setF({ ...f, area: e.target.value })}>{AREAS.map(x => <option key={x}>{x}</option>)}</select></label>
+              <label className="field"><span>How many properties?</span><select className="input" value={f.homes} onChange={e => setF({ ...f, homes: e.target.value })}>{['1', '2', '3', '4', '5'].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label className="field"><span>Managed by an agent now?</span><select className="input" value={f.agentNow} onChange={e => setF({ ...f, agentNow: e.target.value })}><option>Yes</option><option>No</option></select></label>
+              <label className="field"><span>Current agent (optional)</span><input className="input" disabled={f.agentNow === 'No'} value={f.agent} onChange={e => setF({ ...f, agent: e.target.value })} placeholder="e.g. Foxtons" /></label>
+              <label className="field"><span>When would you like to switch?</span><select className="input" value={f.timeframe} onChange={e => setF({ ...f, timeframe: e.target.value })}>{['Now', 'In the next 6 months', 'Early 2027', 'Not sure'].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label className="field"><span>Why are you thinking of changing?</span><input className="input" value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })} placeholder="e.g. Slow repairs" /></label>
+            </div>
+            <label className="check" style={{ fontWeight: 500, color: 'var(--text-secondary)' }}><input type="checkbox" required checked={f.permission} onChange={e => setF({ ...f, permission: e.target.checked })} /> I'm happy for LSP to contact me about a planned switch. Please don't send your agreement here: we ask for it later through a secure link.</label>
+            <button className="btn primary lp-big" type="submit"><ArrowRight size={16} />Join the waiting list</button>
+          </form>}
+      </div>
+    </div>
+  </section>;
+}
+
 export default function Landing() {
   const [wl, setWl] = useState(false);
   const [menu, setMenu] = useState(false); const [scrolled, setScrolled] = useState(false); const [open, setOpen] = useState<number[]>([0, 1, 2, 3]);
@@ -126,7 +179,7 @@ export default function Landing() {
     <section className="lp-hero">
       <div className="lp-wrap lp-hero-in">
         <div className="lp-hero-txt">
-          <span className="lp-pill"><span className="lp-dot" />Property management for Leeds, Bradford and Wakefield</span>
+          <span className="lp-pill"><span className="lp-dot" />Property management for North London</span>
           <h1>Your rental homes, <span>looked after properly.</span></h1>
           <p>Rent collected, repairs approved, safety checks on time. One trusted team and one clear platform, so you always know what&rsquo;s happening in your homes.</p>
           <div className="lp-hero-cta"><button className="btn accent lp-big" onClick={() => to('contact')}>Get a free plan review <ArrowRight size={18} /></button><button className="btn lp-ghost lp-big" onClick={() => to('plans')}>See our plans</button></div>
@@ -157,16 +210,16 @@ export default function Landing() {
     <section className="lp-sec lp-alt" id="plans">
       <div className="lp-wrap">
         <div className="lp-title wide"><span className="lp-eyebrow">Plans</span><h2>Simple plans inclusive of maintenance. A fee of the rent, nothing hidden.</h2><p>Your plan sets how much we can spend on a repair without asking you first. Anything above comes to you to approve.</p></div>
-        <div className="lp-plans">{PLANS.map(pl => <div key={pl.p} className={`lp-plan${pl.top ? ' top' : ''}`}>
+        <div className="lp-plans four">{PLANS.map(pl => <div key={pl.p} className={`lp-plan${pl.top ? ' top' : ''}`}>
           {pl.top && <span className="lp-badge"><Star size={12} fill="currentColor" />Most chosen</span>}
           <span className="lp-plan-name">{pl.t}</span>
           <div className="lp-price"><b>{pl.p}%</b><span>of monthly rent</span></div>
           <p>{pl.d}</p>
-          <div className="lp-limit"><Wrench size={15} />Repair limit <b>£{pl.limit}</b> Per Job</div>
+          <div className="lp-limit"><Wrench size={15} />{pl.limit ? <>Repair limit <b>£{pl.limit}</b> Per Job</> : <>No repairs included</>}</div>
           <ul>{pl.f.map(x => <li key={x}><Check size={16} />{x}</li>)}</ul>
           <button className={`btn ${pl.top ? 'accent' : 'line'} lp-big`} onClick={() => to('contact')}>Choose {pl.t}</button>
         </div>)}</div>
-        <p className="lp-small">Every plan includes a yearly repair budget for each home, with alerts to you at 70%, 90% and 100%.</p>
+        <p className="lp-small">The 12%, 16% and 20% plans include a yearly repair budget for each home, with alerts to you at 70%, 90% and 100%.</p>
       </div>
     </section>
 
@@ -186,6 +239,9 @@ export default function Landing() {
         </div>
       </div>
     </section>
+
+    {/* PLANNED SWITCH */}
+    <PlannedSwitch />
 
     {/* ABOUT */}
     <section className="lp-sec" id="about">
@@ -246,10 +302,10 @@ export default function Landing() {
     <footer className="lp-foot">
       <div className="lp-wrap">
         <div className="lp-foot-top">
-          <div className="lp-foot-brand"><img src="images/logo-white.svg" alt="Landlord Service Plans" /><p>Better management. Better care. Property management for landlords, tenants and letting agents across West Yorkshire.</p></div>
+          <div className="lp-foot-brand"><img src="images/logo-white.svg" alt="Landlord Service Plans" /><p>Better management. Better care. Property management for landlords, tenants and letting agents across North London.</p></div>
           <div><b>Explore</b>{NAV.map(([id, l]) => <button key={id} onClick={() => to(id)}>{l}</button>)}</div>
           <div><b>Portals</b>{['Landlord login', 'Tenant portal', 'Client portal', 'Contractor sign-up'].map(l => <button key={l} onClick={() => setWl(true)}>{l} <span className="lp-soon-chip">Soon</span></button>)}</div>
-          <div><b>Contact</b><span>0113 496 0000</span><span>hello@lsp.co.uk</span><span>40 Park Square, Leeds LS1 2NP</span></div>
+          <div><b>Contact</b><span>020 7946 0000</span><span>hello@lsp.co.uk</span><span>1 Upper Street, London N1 0PQ</span></div>
         </div>
         <div className="lp-foot-bot"><span>© 2026 Landlord Service Plans. All rights reserved.</span><span>Privacy · Terms · Complaints</span></div>
       </div>

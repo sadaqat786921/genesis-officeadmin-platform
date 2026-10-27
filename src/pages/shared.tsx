@@ -73,19 +73,19 @@ export function lockJob(s: S, j: Job, L: Lookups) {
 }
 
 /* ---------- modals ---------- */
-export function NewLandlordModal({ onClose, prefill, onCreated }: { onClose: () => void; prefill?: { name: string; email: string; phone: string }; onCreated?: (id: string) => void }) {
+export function NewLandlordModal({ onClose, prefill, onCreated, from, skipProperty, checkFirst }: { onClose: () => void; prefill?: { name: string; email: string; phone: string; billing?: string; plan?: Plan; admin?: string }; onCreated?: (id: string) => void; from?: string; skipProperty?: boolean; checkFirst?: boolean }) {
   const s = useStore(); const L = useLookups();
-  const [step, setStep] = useState(prefill ? 1 : 0);
+  const [step, setStep] = useState(prefill && !from && !checkFirst ? 1 : 0);
   const [q, setQ] = useState(prefill?.name ?? '');
-  const [f, setF] = useState({ name: prefill?.name ?? '', email: prefill?.email ?? '', phone: prefill?.phone ?? '', billing: '', admin: 'et' });
-  const [plan, setPlan] = useState<Plan>(16);
+  const [f, setF] = useState({ name: prefill?.name ?? '', email: prefill?.email ?? '', phone: prefill?.phone ?? '', billing: prefill?.billing ?? '', admin: prefill?.admin ?? 'et' });
+  const [plan, setPlan] = useState<Plan>(prefill?.plan ?? 16);
   const [start, setStart] = useState('2026-11-01');
   const [prop, setProp] = useState({ address: '', area: '', type: 'House' as Property['type'], beds: '3', rooms: '5', rent: '', budget: '1200', photo: '' });
   const matches = q.trim().length > 1 ? s.landlords.filter(l => (l.name + l.email).toLowerCase().includes(q.toLowerCase())) : [];
   const steps = ['Check they are new', 'Landlord details', 'Choose the plan', 'First property', 'Send login email'];
   const create = () => {
     const id = 'L' + (s.landlords.length + 1) + (Date.now() % 100);
-    s.setLandlords(ls => [{ id, ...f, plan, start: dateLabel(start), status: 'Invite sent', bank: '—', comms: [{ id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: 'Your Genesis landlord login', text: 'Login email sent from Outlook.' }] }, ...ls]);
+    s.setLandlords(ls => [{ id, ...f, plan, start: dateLabel(start), status: 'Invite sent', bank: '—', comms: [{ id: 'cm' + Date.now(), at: nowStamp(), by: 'Sarah Khan', channel: 'Email', dir: 'out', subject: 'Your Genesis landlord login', text: 'Login email sent from Outlook.' }] }, ...ls]);
     if (prop.address) s.setProperties(ps => [{ id: 'P' + (Date.now() % 10000), address: prop.address, area: prop.area || '—', type: prop.type, beds: +prop.beds, rooms: prop.type === 'HMO' ? +prop.rooms : undefined, baths: 1, managed: true, owner: id, rent: +prop.rent || 0, status: 'Vacant', admin: f.admin, photo: prop.photo || 'images/home1.jpg', budget: +prop.budget || 0, used: 0, gas: true, added: '15 Oct 2026' }, ...ps]);
     s.log(`Created landlord ${f.name} on the ${plan}% plan${prop.address ? ` with ${prop.address}` : ''} and sent the login email`, 'Landlords');
     s.toast(`Login email sent to ${f.email}`);
@@ -94,7 +94,7 @@ export function NewLandlordModal({ onClose, prefill, onCreated }: { onClose: () 
   };
   const ok1 = f.name && /@/.test(f.email) && f.phone && f.billing;
   const ok3 = !prop.address || (prop.area && prop.rent);
-  return <Modal wide title="New landlord" sub="Only the Supervisor creates landlord accounts. Landlords do not need ID checks." onClose={onClose}
+  return <Modal wide title="New landlord" sub={from ? `${from} sent these details. Check for duplicates, confirm the plan and the Office Admin, then send the login email.` : 'Only the Supervisor creates landlord accounts. Landlords do not need ID checks.'} onClose={onClose}
     footer={<>{step > 0 && <Btn kind="outline" onClick={() => setStep(step - 1)}>Back</Btn>}
       {step === 3 && !prop.address && <Btn kind="ghost" onClick={() => setStep(4)}>Skip for now</Btn>}
       {step < 4 && <Btn disabled={(step === 1 && !ok1) || (step === 3 && (!prop.address || !ok3))} onClick={() => setStep(step + 1)}>{step === 0 ? 'They are new, continue' : 'Continue'}</Btn>}
@@ -110,13 +110,14 @@ export function NewLandlordModal({ onClose, prefill, onCreated }: { onClose: () 
       <Field label="Office Admin in charge"><Select value={f.admin} onChange={v => setF({ ...f, admin: v })} options={L.admins.map(a => ({ value: a.id, label: a.name }))} /></Field>
       <div style={{ gridColumn: '1/-1' }}><Field label="Billing address"><Text value={f.billing} onChange={v => setF({ ...f, billing: v })} placeholder="House, street, town, postcode" /></Field></div>
     </div>}
-    {step === 2 && <><div className="grid g3">{([12, 16, 20] as Plan[]).map(p => <button key={p} className={`choice${plan === p ? ' on' : ''}`} onClick={() => setPlan(p)}><b style={{ fontSize: 20 }}>{p}%</b><span className="small">Job limit {money(PLAN[p].limit)}</span><span className="caption">Repairs above this come to you to approve.</span></button>)}</div>
+    {step === 2 && <><div className="grid g4">{([10, 12, 16, 20] as Plan[]).map(p => <button key={p} className={`choice${plan === p ? ' on' : ''}`} onClick={() => setPlan(p)}><b style={{ fontSize: 20 }}>{p}%</b><span className="small">{p === 10 ? 'Management Only' : `Job limit ${money(PLAN[p].limit)}`}</span><span className="caption">{p === 10 ? 'No repairs included. Every repair needs the landlord’s OK.' : 'Repairs above this come to you to approve.'}</span></button>)}</div>
       <Field label="Agreement start date"><input className="input" type="date" value={start} onChange={e => setStart(e.target.value)} /></Field></>}
-    {step === 3 && <div className="row" style={{ gap: 16, alignItems: 'stretch' }}>
+    {step === 3 && skipProperty && <Note>The property is added when the takeover is confirmed in Planned Switch, so it isn't counted as managed before then. Click "Skip for now".</Note>}
+    {step === 3 && !skipProperty && <div className="row" style={{ gap: 16, alignItems: 'stretch' }}>
       <div style={{ width: 240, flex: 'none' }}><PhotoPicker value={prop.photo} onChange={v => setProp({ ...prop, photo: v })} /></div>
       <div className="grid g2 grow" style={{ gap: 12 }}>
         <Field label="Address"><Text value={prop.address} onChange={v => setProp({ ...prop, address: v })} placeholder="12 Oak Street" /></Field>
-        <Field label="Town and postcode"><Text value={prop.area} onChange={v => setProp({ ...prop, area: v })} placeholder="Leeds LS6" /></Field>
+        <Field label="Town and postcode"><Text value={prop.area} onChange={v => setProp({ ...prop, area: v })} placeholder="London N1" /></Field>
         <Field label="Type"><Select value={prop.type} onChange={v => setProp({ ...prop, type: v as Property['type'] })} options={['House', 'Flat', 'HMO'].map(x => ({ value: x, label: x === 'HMO' ? 'Shared house (HMO)' : x }))} /></Field>
         {prop.type === 'HMO' ? <Field label="Rooms to let"><Text value={prop.rooms} onChange={v => setProp({ ...prop, rooms: v })} /></Field> : <Field label="Bedrooms"><Text value={prop.beds} onChange={v => setProp({ ...prop, beds: v })} /></Field>}
         <Field label="Monthly rent (£)"><Text value={prop.rent} onChange={v => setProp({ ...prop, rent: v })} placeholder="1150" /></Field>
@@ -143,7 +144,7 @@ export function AddPropertyModal({ owner, managed, onClose }: { owner: string; m
       <div style={{ width: 240, flex: 'none' }}><PhotoPicker value={f.photo} onChange={v => setF({ ...f, photo: v })} /></div>
       <div className="grid g2 grow" style={{ gap: 12 }}>
         <Field label="Address"><Text value={f.address} onChange={v => setF({ ...f, address: v })} placeholder="12 Oak Street" /></Field>
-        <Field label="Town and postcode"><Text value={f.area} onChange={v => setF({ ...f, area: v })} placeholder="Leeds LS6" /></Field>
+        <Field label="Town and postcode"><Text value={f.area} onChange={v => setF({ ...f, area: v })} placeholder="London N1" /></Field>
         <Field label="Type"><Select value={f.type} onChange={v => setF({ ...f, type: v as Property['type'] })} options={['House', 'Flat', 'HMO'].map(x => ({ value: x, label: x === 'HMO' ? 'Shared house (HMO)' : x }))} /></Field>
         {f.type === 'HMO' ? <Field label="Rooms to let"><Text value={f.rooms} onChange={v => setF({ ...f, rooms: v })} /></Field> : <Field label="Bedrooms"><Text value={f.beds} onChange={v => setF({ ...f, beds: v })} /></Field>}
         {managed && <Field label="Monthly rent (£)"><Text value={f.rent} onChange={v => setF({ ...f, rent: v })} placeholder="1150" /></Field>}

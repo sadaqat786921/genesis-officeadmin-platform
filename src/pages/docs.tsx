@@ -10,7 +10,7 @@ import { invoiceState } from './tables';
 /* ================= Company details printed on every quote, invoice and report ================= */
 export const COMPANY = {
   name: 'Landlord Service Plans Limited',
-  address: ['40 Park Square', 'Leeds LS1 2NP'],
+  address: ['1 Upper Street', 'London N1 0PQ'],
   email: 'accounts@lsp.co.uk',
   reg: 'Company Registration No. 13940065',
   bank: ['Sort Code: 04-03-70', 'Account No.: 45338201'],

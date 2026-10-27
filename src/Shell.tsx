@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  LayoutDashboard, ListChecks, Send, Mail, User, KeyRound, UserCheck, Home, UserPlus, Briefcase, Wrench, ClipboardCheck, HardHat, ArrowLeft,
+  LayoutDashboard, ArrowRightLeft, ListChecks, Send, Mail, User, KeyRound, UserCheck, Home, UserPlus, Briefcase, Wrench, ClipboardCheck, HardHat, ArrowLeft,
   CircleCheck, ShieldCheck, PoundSterling, History, Lock, FileBarChart, PanelLeft, LogOut, Search, Bell, CalendarDays, ChevronRight, ArrowRight, Eye, EyeOff, ShieldAlert,
 } from 'lucide-react';
 import { useStore, useLookups, type Route } from './store';
@@ -8,7 +8,7 @@ import { LET_STAGES, daysFrom, ME_NAME, SUPERVISOR } from './data';
 import { Btn, IBtn, Note } from './ui';
 
 export const NAV: { group: string; items: { id: Route; label: string; icon: typeof Home }[] }[] = [
-  { group: 'My Work', items: [{ id: 'today', label: 'My Day', icon: LayoutDashboard }, { id: 'tasks', label: 'My Tasks', icon: ListChecks }, { id: 'enquiries', label: 'Enquiries', icon: Mail }] },
+  { group: 'My Work', items: [{ id: 'today', label: 'My Day', icon: LayoutDashboard }, { id: 'tasks', label: 'My Tasks', icon: ListChecks }, { id: 'enquiries', label: 'Enquiries', icon: Mail }, { id: 'switch', label: 'Planned Switch', icon: ArrowRightLeft }] },
   { group: 'Homes & People', items: [{ id: 'landlords', label: 'Landlords', icon: User }, { id: 'lettings', label: 'Lettings', icon: KeyRound }, { id: 'tenants', label: 'Tenants', icon: UserCheck }, { id: 'properties', label: 'Properties', icon: Home }] },
   { group: 'Work', items: [{ id: 'clients', label: 'Clients', icon: Briefcase }, { id: 'contractors', label: 'Contractors', icon: HardHat }, { id: 'jobs', label: 'Jobs', icon: Wrench }, { id: 'inspections', label: 'Inspections', icon: ClipboardCheck }] },
   { group: 'Checks & Money', items: [{ id: 'safety', label: 'Safety & Compliance', icon: ShieldCheck }, { id: 'rent', label: 'Rent & Invoices', icon: PoundSterling }] },
@@ -27,6 +27,7 @@ export function useCounts() {
     jobs: s.jobs.filter(j => (j.urgent && !['Approved', 'Invoiced', 'Declined'].includes(j.status)) || j.status === 'Proof uploaded').length,
     safety: s.safety.filter(c => c.status === 'Overdue' || c.status === 'Missing').length,
     requests: s.jobs.filter(j => j.status === 'Waiting approval').length + s.applicants.filter(a => a.stage === 4 && !a.rejected).length + s.requests.filter(r => r.status === 'Waiting').length,
+    switch: s.leads.filter(l => !l.closed && ((l.nextContact && daysFrom(l.nextContact) <= 0) || l.props.some(p => p.stage === 0 || (p.stage === 5 && !l.landlordId)))).length,
   } as Partial<Record<Route, number>>;
 }
 
@@ -70,6 +71,7 @@ export function PageHeader({ title, action, crumbs, back }: { title: ReactNode; 
     return r.slice(0, 8);
   }, [q, s, L]);
   const notes = [
+    ...s.leads.filter(l => !l.closed && l.nextContact && daysFrom(l.nextContact) <= 0).map(l => ({ t: 'Planned Switch follow-up due: ' + l.name, d: l.nextNote ?? '', r: 'switch' as Route, id: l.id, tone: 'warn' })),
     ...s.jobs.filter(j => j.urgent && j.status === 'New').map(j => ({ t: 'Emergency: ' + j.title, d: L.prop(j.property)?.address ?? '', r: 'jobs' as Route, id: j.id, tone: 'err' })),
     ...s.jobs.filter(j => j.status === 'Proof uploaded').map(j => ({ t: 'Photos to check: ' + j.title, d: L.prop(j.property)?.address ?? '', r: 'jobs' as Route, id: j.id, tone: 'warn' })),
     ...s.enquiries.filter(e => e.stage === 'Assigned').map(e => ({ t: `${SUPERVISOR} gave you: ${e.name}`, d: e.about, r: 'enquiries' as Route, id: e.id, tone: 'info' })),

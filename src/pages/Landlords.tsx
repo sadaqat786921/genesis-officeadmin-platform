@@ -26,7 +26,7 @@ function LandlordList() {
       <Kpi icon={<UserCheck size={18} />} tone="brand" label="Landlords" value={s.landlords.length} caption={`${s.landlords.filter(l => l.status === 'Invite sent').length} waiting to log in`} />
       <Kpi icon={<Home size={18} />} tone="info" label="Managed homes" value={s.properties.filter(p => p.managed).length} caption="across all landlords" onClick={() => s.go('properties')} />
       <Kpi icon={<Wallet size={18} />} tone="warn" label="Budgets over 70%" value={high} caption="properties, alert sent" onClick={() => s.go('requests')} />
-      <Kpi icon={<ShieldCheck size={18} />} tone="ok" label="Plans" value={<span style={{ fontSize: 18 }}>{([12, 16, 20] as const).map(p => `${s.landlords.filter(l => l.plan === p).length}×${p}%`).join('  ')}</span>} caption="12% · 16% · 20%" />
+      <Kpi icon={<ShieldCheck size={18} />} tone="ok" label="Plans" value={<span style={{ fontSize: 18 }}>{([10, 12, 16, 20] as const).map(p => `${s.landlords.filter(l => l.plan === p).length}×${p}%`).join('  ')}</span>} caption="10% · 12% · 16% · 20%" />
     </div>
     <Card title="Your landlords" sub={`The landlords ${SUPERVISOR} gave you. Click one to see their homes, safety checks, inspections, jobs and money.`} action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search name or email" /><Tabs value={plan} onChange={setPlan} items={[{ id: 'all', label: 'All plans' }, { id: '12', label: '12%' }, { id: '16', label: '16%' }, { id: '20', label: '20%' }]} /></div>}>
       <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Plan</th><th>Homes</th><th>Repair budget used</th><th>Safety</th><th>Office Admin</th><th>Login</th></tr></thead><tbody>
@@ -110,7 +110,7 @@ function LandlordPage({ id }: { id: string }) {
 
     {addP && <AddPropertyModal owner={id} managed onClose={() => setAddP(false)} />}
     {edit && <EditLandlord id={id} onClose={() => setEdit(false)} />}
-    {planReq && <Reason title={`Ask for a plan change for ${l.name}`} sub={`${SUPERVISOR} decides. The plan changes from a future date.`} cta="Send request" label="What does the landlord want?" options={[12, 16, 20].filter(x => x !== l.plan).map(x => `Move to the ${x}% plan (job limit ${money(PLAN[x as 12].limit)})`)} onClose={() => setPlanReq(false)} onDone={r => { sendRequest(s, { kind: 'Plan change', title: `Plan change: ${l.name}`, about: r, link: { route: 'landlords', id } }); setPlanReq(false); }} />}
+    {planReq && <Reason title={`Ask for a plan change for ${l.name}`} sub={`${SUPERVISOR} decides. The plan changes from a future date.`} cta="Send request" label="What does the landlord want?" options={[10, 12, 16, 20].filter(x => x !== l.plan).map(x => `Move to the ${x}% plan (job limit ${money(PLAN[x as 12].limit)})`)} onClose={() => setPlanReq(false)} onDone={r => { sendRequest(s, { kind: 'Plan change', title: `Plan change: ${l.name}`, about: r, link: { route: 'landlords', id } }); setPlanReq(false); }} />}
   </>;
 }
 
@@ -132,9 +132,9 @@ export function AskNewLandlord({ onClose, prefill, enquiry }: { onClose: () => v
   return <Modal title="Ask the Supervisor to create a landlord" sub={`Only ${SUPERVISOR} can create landlord accounts. Send the details and they create it and send the login email from Outlook.`} onClose={onClose}
     footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn disabled={!ok} onClick={() => { sendRequest(s, { kind: 'New landlord', title: `Create landlord account: ${f.name.trim()}`, about: `${f.homes || 'Homes to be added'} · wants the ${f.plan}% plan`, link: enquiry ? { route: 'enquiries', id: enquiry } : undefined, data: { name: f.name.trim(), email: f.email.trim(), phone: f.phone, billing: f.billing, plan: f.plan, ...(enquiry ? { enquiry } : {}) } }); if (enquiry) s.setEnquiries(es => es.map(e => e.id === enquiry ? { ...e, comms: [...e.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'System', text: `Sent to ${SUPERVISOR} to create the landlord account.` }] } : e)); onClose(); }}>Send to {SUPERVISOR.split(' ')[0]}</Btn></>}>
     <div className="grid g2"><Field label="Full name"><Text value={f.name} onChange={v => setF({ ...f, name: v })} /></Field><Field label="Email (their login)"><Text value={f.email} onChange={v => setF({ ...f, email: v })} /></Field></div>
-    <div className="grid g2"><Field label="Phone"><Text value={f.phone} onChange={v => setF({ ...f, phone: v })} /></Field><Field label="Plan they want"><Select value={f.plan} onChange={v => setF({ ...f, plan: v })} options={(['12', '16', '20'] as const).map(p => ({ value: p, label: `${p}% · job limit ${money(PLAN[+p as 12].limit)}` }))} /></Field></div>
-    <Field label="Billing address"><Text value={f.billing} onChange={v => setF({ ...f, billing: v })} placeholder="e.g. 4 Kirkstall Road, Leeds LS5" /></Field>
-    <Field label="Homes they want managed"><Text value={f.homes} onChange={v => setF({ ...f, homes: v })} placeholder="e.g. 2 flats in Kirkstall LS5" /></Field>
+    <div className="grid g2"><Field label="Phone"><Text value={f.phone} onChange={v => setF({ ...f, phone: v })} /></Field><Field label="Plan they want"><Select value={f.plan} onChange={v => setF({ ...f, plan: v })} options={(['10', '12', '16', '20'] as const).map(p => ({ value: p, label: p === '10' ? '10% · Management Only' : `${p}% · job limit ${money(PLAN[+p as 12].limit)}` }))} /></Field></div>
+    <Field label="Billing address"><Text value={f.billing} onChange={v => setF({ ...f, billing: v })} placeholder="e.g. 4 Kirkstall Road, London N5" /></Field>
+    <Field label="Homes they want managed"><Text value={f.homes} onChange={v => setF({ ...f, homes: v })} placeholder="e.g. 2 flats in Kentish Town NW5" /></Field>
     {dup ? <Note tone="err">{dup.name} ({dup.email}) is already a landlord. No new account is needed.</Note> : f.email ? <Note tone="ok">No landlord with this name or email. Checked for duplicates.</Note> : null}
   </Modal>;
 }
