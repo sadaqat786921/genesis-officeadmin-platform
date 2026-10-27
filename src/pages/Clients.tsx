@@ -6,11 +6,11 @@ import { PageHeader, crumbsFor } from '../Shell';
 import { AddPropertyModal, DONE_JOB, jobTone, nextJobAction, adminName } from './shared';
 import { InvoiceTable, JobTable } from './tables';
 import { JobPage } from './Jobs';
-import { QuoteBuilder } from './docs';
+import { EditorRoute, editorLink } from './Editor';
 import type { Job } from '../data';
 
 /** Where a quote stands, from the client's side. */
-export const quoteState = (j: Job) => j.status === 'New' ? { label: 'Needs a quote', tone: 'warn' as const } : j.status === 'Quote sent' ? { label: 'Sent · waiting', tone: 'info' as const } : j.status === 'Declined' ? { label: 'Declined', tone: 'neutral' as const } : j.status === 'Invoiced' ? { label: 'Accepted · invoiced', tone: 'ok' as const } : { label: 'Accepted', tone: 'ok' as const };
+export const quoteState = (j: Job) => j.status === 'New' ? (j.quoteNo ? { label: 'Draft', tone: 'neutral' as const } : { label: 'Needs a quote', tone: 'warn' as const }) : j.status === 'Quote sent' ? { label: 'Sent · waiting', tone: 'info' as const } : j.status === 'Declined' ? { label: 'Declined', tone: 'neutral' as const } : j.status === 'Invoiced' ? { label: 'Accepted · invoiced', tone: 'ok' as const } : { label: 'Accepted', tone: 'ok' as const };
 
 function QuoteTable({ list, onCreate }: { list: Job[]; onCreate: (j: Job) => void }) {
   const s = useStore(); const L = useLookups();
@@ -22,13 +22,14 @@ function QuoteTable({ list, onCreate }: { list: Job[]; onCreate: (j: Job) => voi
       <td>{j.quoted ? <When at={j.quoted} /> : <span className="muted">—</span>}</td>
       <td>{j.price ? <b>{money(j.price)}</b> : <span className="muted">—</span>}</td>
       <td><Chip tone={st.tone}>{st.label}</Chip></td>
-      <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>{j.status === 'New' ? <Btn sm icon={<Plus size={14} />} onClick={() => onCreate(j)}>Create quote</Btn> : j.status === 'Quote sent' ? <Btn sm kind="ghost" icon={<Send size={14} />} onClick={() => onCreate(j)}>Resend</Btn> : null}</td></tr>; })}
+      <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>{j.status === 'New' ? <Btn sm icon={<Plus size={14} />} onClick={() => onCreate(j)}>{j.quoteNo ? 'Continue draft' : 'Create quote'}</Btn> : j.status === 'Quote sent' ? <Btn sm kind="ghost" icon={<Send size={14} />} onClick={() => onCreate(j)}>Resend</Btn> : null}</td></tr>; })}
   </tbody></table>{!list.length && <Empty icon={<FileText size={22} />}>No quotes yet.</Empty>}</div>;
 }
 const quoteList = (jobs: Job[]) => jobs.filter(j => !j.managed && (j.quoteNo || j.status === 'New' || j.status === 'Quote sent')).sort((a, b) => (a.status === 'New' ? -1 : 0) - (b.status === 'New' ? -1 : 0));
 
 export function Clients() {
   const s = useStore();
+  if (s.detail && /^(quote|invoice)~/.test(s.detail)) return <EditorRoute detail={s.detail} ctx="clients" />;
   if (s.detail && s.jobs.some(j => j.id === s.detail)) return <JobPage id={s.detail} ctx="clients" />;
   if (s.detail && s.clients.some(c => c.id === s.detail)) return <ClientPage id={s.detail} />;
   return <ClientList />;
@@ -36,7 +37,7 @@ export function Clients() {
 
 function ClientList() {
   const s = useStore(); const L = useLookups();
-  const [tab, setTab] = useState<'requests' | 'quotes' | 'clients' | 'invoices'>('requests'); const [qb, setQb] = useState<Job | 'new' | null>(null); const [f, setF] = useState<'open' | 'all'>('open'); const [q, setQ] = useState('');
+  const [tab, setTab] = useState<'requests' | 'quotes' | 'clients' | 'invoices'>('requests'); const setQb = (j: Job | 'new') => s.go('clients', editorLink('quote', j === 'new' ? undefined : j.id)); const [f, setF] = useState<'open' | 'all'>('open'); const [q, setQ] = useState('');
   const reqs = s.jobs.filter(j => !j.managed && (f === 'all' || !DONE_JOB.includes(j.status)) && (j.title + (L.prop(j.property)?.address ?? '') + L.ownerName(L.prop(j.property))).toLowerCase().includes(q.toLowerCase()));
   const all = s.jobs.filter(j => !j.managed);
   const invs = s.invoices.filter(i => i.toKind === 'Client');
@@ -62,15 +63,14 @@ function ClientList() {
       <div className="flex"><Avatar name={c.name} size="md" /><div className="stack grow"><b>{c.name}</b><span className="caption">{c.contact}</span></div><Chip tone="ok">{c.status}</Chip></div>
       <span className="caption"><Mail size={12} style={{ verticalAlign: -2 }} /> {c.email}</span>
       <div className="flex between"><span className="small">{homes.length} homes</span><span className="small">{open} open jobs</span><span className="small">{c.terms}</span></div></button>; })}</div></Card>}
-    {tab === 'quotes' && <Card title="Quotes" sub="Create a quote with its own rows (service, description, qty, rate), preview it in the LSP template, then mark it sent." action={<Btn sm icon={<Plus size={14} />} onClick={() => setQb('new')}>Create quote</Btn>}><QuoteTable list={quoteList(all)} onCreate={setQb} /></Card>}
-    {qb && <QuoteBuilder job={qb === 'new' ? undefined : qb} onClose={() => setQb(null)} onSent={() => setTab('quotes')} />}
+    {tab === 'quotes' && <Card title="Quotes" sub="Create a quote on its own page: pick products or services by code, add attachments, preview the LSP template, then send it by email." action={<Btn sm icon={<Plus size={14} />} onClick={() => setQb('new')}>Create quote</Btn>}><QuoteTable list={quoteList(all)} onCreate={setQb} /></Card>}
     {tab === 'invoices' && <Card title="Invoices to clients" sub="Client invoices have the client's own payment terms."><InvoiceTable list={invs} /></Card>}
   </>;
 }
 
 function ClientPage({ id }: { id: string }) {
   const s = useStore(); const c = s.clients.find(x => x.id === id)!;
-  const [tab, setTab] = useState<'requests' | 'quotes' | 'homes' | 'invoices' | 'history'>('requests'); const [add, setAdd] = useState(false); const [qb, setQb] = useState<Job | 'new' | null>(null);
+  const [tab, setTab] = useState<'requests' | 'quotes' | 'homes' | 'invoices' | 'history'>('requests'); const [add, setAdd] = useState(false); const setQb = (j: Job | 'new') => s.go('clients', editorLink('quote', j === 'new' ? undefined : j.id, id));
   const homes = s.properties.filter(p => p.owner === id); const jobs = s.jobs.filter(j => homes.some(h => h.id === j.property));
   const invs = s.invoices.filter(i => i.toKind === 'Client' && i.to === id);
   const owed = invs.reduce((a, i) => a + i.amount - i.paid, 0);
@@ -87,7 +87,6 @@ function ClientPage({ id }: { id: string }) {
     {tab === 'invoices' && <Card title="Invoices"><InvoiceTable list={invs} /></Card>}
     {tab === 'history' && <Card title="History"><KV rows={[['Address', c.address], ['Joined', c.joined]]} />{acts.length ? <Timeline items={acts.map(a => ({ at: a.at, text: a.what, by: a.who }))} /> : <span className="caption">No activity yet.</span>}</Card>}
     {tab === 'quotes' && <Card title="Quotes" action={<Btn sm icon={<Plus size={14} />} onClick={() => setQb('new')}>Create quote</Btn>}><QuoteTable list={quoteList(jobs)} onCreate={setQb} /></Card>}
-    {qb && <QuoteBuilder job={qb === 'new' ? undefined : qb} client={id} onClose={() => setQb(null)} onSent={() => setTab('quotes')} />}
     {add && <AddPropertyModal owner={id} managed={false} onClose={() => setAdd(false)} />}
   </>;
 }

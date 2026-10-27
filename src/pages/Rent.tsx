@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PoundSterling, AlertTriangle, Bell, Receipt, Landmark, ArrowRight, FileText, CheckCircle2, PauseCircle, Send, Wallet, Mail } from 'lucide-react';
+import { PoundSterling, AlertTriangle, Bell, Receipt, Landmark, ArrowRight, FileText, CheckCircle2, PauseCircle, Send, Wallet, Mail, Plus } from 'lucide-react';
 import { useStore, useLookups, money, rentStatus, type Lookups } from '../store';
 import { daysFrom, nowStamp, SUPERVISOR, type Landlord } from '../data';
 import { ME_NAME } from '../data';
@@ -8,6 +8,7 @@ import { PageHeader, crumbsFor } from '../Shell';
 import { PaymentModal, adminName, HomeCard } from './shared';
 import { InvoiceTable } from './tables';
 import { rentLedger } from './Tenants';
+import { EditorRoute, editorLink } from './Editor';
 
 type S = ReturnType<typeof useStore>;
 const PAY_DATE = '20 Oct 2026';
@@ -32,6 +33,7 @@ export function sendRentReminder(s: S, L: Lookups, rowId: string) {
 
 export function Rent() {
   const s = useStore();
+  if (s.detail && /^(quote|invoice)~/.test(s.detail)) return <EditorRoute detail={s.detail} ctx="rent" />;
   if (s.detail && s.rent.some(r => r.id === s.detail)) return <RentAccount id={s.detail} />;
   return <RentHome />;
 }
@@ -47,7 +49,7 @@ function RentHome() {
   const toPay = lls.filter(x => x.p.status !== 'Paid').reduce((a, x) => a + x.p.pay, 0);
   const invs = s.invoices;
   return <>
-    <PageHeader crumbs={crumbsFor('rent', s.go)} title="Rent & Invoices" />
+    <PageHeader crumbs={crumbsFor('rent', s.go)} title="Rent & Invoices" action={<Btn icon={<Plus size={18} />} onClick={() => s.go('rent', editorLink('invoice'))}>Create invoice</Btn>} />
     <div className="grid g4">
       <Kpi icon={<PoundSterling size={18} />} tone="ok" label="Collected in October" value={money(R.reduce((a, r) => a + r.paid, 0))} caption={`of ${money(R.reduce((a, r) => a + r.amount, 0))} due · ${Math.round(R.reduce((a, r) => a + r.paid, 0) / R.reduce((a, r) => a + r.amount, 0) * 100)}%`} onClick={() => { setTab('rent'); setF('paid'); }} />
       <Kpi icon={<AlertTriangle size={18} />} tone="err" label="Late rent" value={late.length} caption={money(late.reduce((a, r) => a + r.amount - r.paid, 0)) + ' owed'} active={tab === 'rent' && f === 'late'} onClick={() => { setTab('rent'); setF('late'); }} />
@@ -73,7 +75,7 @@ function RentHome() {
           <td><Chip tone={p.status === 'Paid' ? 'ok' : p.status === 'On hold' ? 'warn' : 'info'}>{p.status === 'Scheduled' ? 'Due ' + PAY_DATE.replace(' 2026', '') : p.status}</Chip></td>
           <td onClick={e => e.stopPropagation()}><div className="flex" style={{ justifyContent: 'flex-end' }}><Btn sm kind="ghost" icon={<Send size={14} />} onClick={() => { s.log(`Sent October statement to ${l.name}`, 'Rent & Invoices'); s.toast(`Statement sent to ${l.email}`); }}>Statement</Btn></div></td></tr>)}
       </tbody></table></div></Card>}
-    {tab === 'invoices' && <Card title="Invoices" sub="Landlord invoices are due straight away. Client invoices use the client's own terms. Click one to see what it's for."><InvoiceTable list={invs} /></Card>}
+    {tab === 'invoices' && <Card title="Invoices" sub="Landlord invoices are due straight away. Client invoices use the client's own terms. Click one to see what it's for." action={<Btn sm icon={<Plus size={14} />} onClick={() => s.go('rent', editorLink('invoice'))}>Create invoice</Btn>}><InvoiceTable list={invs} /></Card>}
     {pay && <RecordPay rowId={pay} onClose={() => setPay(null)} />}
     {stmt && <Statement id={stmt} onClose={() => setStmt(null)} />}
     {bulk && <Modal title={`Send reminders to ${late.length} tenants?`} sub="Each tenant gets an email from Outlook. It is saved in their communication." onClose={() => setBulk(false)} footer={<><Btn kind="outline" onClick={() => setBulk(false)}>Cancel</Btn><Btn icon={<Bell size={16} />} onClick={() => { late.forEach(r => sendRentReminder(s, L, r.id)); setBulk(false); }}>Send reminders</Btn></>}>

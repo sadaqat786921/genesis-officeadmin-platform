@@ -43,7 +43,7 @@ export function DocSheet({ kind, to, meta, site, lines, foot, stamp, children }:
       <div className="doc-meta">{meta.map(([k, v]) => <div key={k}><span className="doc-lab">{k}</span><span>{v}</span></div>)}</div>
     </div>
     {lines && <>
-      <table className="doc-t"><thead><tr><th>Activity</th><th>Description</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
+      <table className="doc-t"><thead><tr><th>Product or service</th><th>Description</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
         <tbody>{lines.map((l, i) => <tr key={i}><td>{l.activity}</td><td>{l.desc}</td><td className="r">{l.qty}</td><td className="r">{num(l.rate)}</td><td className="r">{num(r2(l.qty * l.rate))}</td></tr>)}</tbody></table>
       <div className="doc-tot">{(foot ?? [['Balance due', '£' + num(lineSum(lines))]]).map(([k, v], i, a) => <div key={k} className={i === a.length - 1 ? 'big' : ''}><span>{k}</span><b>{v}</b></div>)}</div>
     </>}
@@ -164,7 +164,8 @@ export function InvoiceModal({ job, invoice, onClose }: { job?: Job; invoice?: s
     <DocSheet kind="INVOICE" to={{ label: 'Invoice to', rows: toRows }} meta={[['Invoice', no.replace('INV-', '')], ['Date', d(issued)], ['Terms', terms === 'Straight away' ? 'Due on receipt' : 'Net ' + terms.replace(' days', '')], ['Due date', d(due)]]}
       site={inv?.site ?? (p ? p.address : undefined)} lines={lines}
       foot={inv && inv.paid > 0 ? [['Total', '£' + num(total)], ['Paid', '−£' + num(inv.paid)], ['Balance due', '£' + num(left)]] : [['Balance due', '£' + num(total)]]}
-      stamp={inv ? (left <= 0 ? { text: 'PAID', tone: 'ok' } : inv.overdue ? { text: 'OVERDUE', tone: 'warn' } : { text: 'SENT', tone: 'info' }) : undefined} />
+      stamp={inv ? (left <= 0 ? { text: 'PAID', tone: 'ok' } : inv.overdue ? { text: 'OVERDUE', tone: 'warn' } : { text: 'SENT', tone: 'info' }) : undefined}>{inv?.note && <p className="doc-note">{inv.note}</p>}</DocSheet>
+    {inv?.attachments?.length ? <span className="caption">Attached to the email: {inv.attachments.join(', ')}</span> : null}
     {!inv && <Note tone="ok">It goes from Outlook to {email} with the PDF attached{toKind === 'Landlord' ? ', and shows in the landlord portal' : ''}.</Note>}
   </Modal>;
 }

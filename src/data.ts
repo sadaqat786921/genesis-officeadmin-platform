@@ -186,11 +186,11 @@ export const JOB_STATUS = ['New', 'Quote sent', 'Quote accepted', 'Waiting appro
 export type JobStatus = typeof JOB_STATUS[number];
 export interface JobEvent { at: string; by: string; text: string }
 /** One row on a quote or invoice. */
-export interface Line { activity: string; desc: string; qty: number; rate: number }
+export interface Line { activity: string; desc: string; qty: number; rate: number; code?: string }
 export interface Job {
   id: string; title: string; property: string; managed: boolean; contractor?: string; cost: number; price: number; status: JobStatus; urgent?: boolean; reported: string; by: string; tenant?: string;
   admin: string; note?: string; proof?: string[]; category: 'Plumbing' | 'Heating' | 'Electrical' | 'Roofing' | 'Locks & doors' | 'Damp' | 'General'; comms: Comm[]; events: JobEvent[]; invoice?: string; sentBack?: string; declined?: string; landlordOk?: boolean;
-  lines?: Line[]; quoteNo?: string; quoted?: string; validUntil?: string; quoteNote?: string;
+  lines?: Line[]; quoteNo?: string; quoted?: string; validUntil?: string; quoteNote?: string; memo?: string; attachments?: string[]; acceptedBy?: string; acceptedAt?: string; billTo?: string; quoteEmail?: string;
 }
 const ev = (at: string, by: string, text: string): JobEvent => ({ at, by, text });
 export const JOBS: Job[] = [
@@ -291,7 +291,7 @@ export const RENT: RentRow[] = [
 ];
 
 /* ---------- invoices ---------- */
-export interface Invoice { id: string; to: string; toKind: 'Landlord' | 'Client'; job?: string; amount: number; paid: number; terms: string; issued: string; due: string; overdue: boolean; items: { desc: string; amount: number; activity?: string; qty?: number; rate?: number }[]; site?: string; paidAt?: string }
+export interface Invoice { id: string; to: string; toKind: 'Landlord' | 'Client'; job?: string; amount: number; paid: number; terms: string; issued: string; due: string; overdue: boolean; items: { desc: string; amount: number; activity?: string; qty?: number; rate?: number; code?: string }[]; site?: string; note?: string; memo?: string; attachments?: string[]; billTo?: string; paidAt?: string }
 export const INVOICES: Invoice[] = [
   { id: 'INV-1042', to: 'L4', toKind: 'Landlord', job: 'J5', amount: 95, paid: 95, terms: 'Straight away', issued: '7 Oct 2026', due: '7 Oct 2026', overdue: false, items: [{ desc: 'Tap replacement, 31 Ash Grove', amount: 95 }] },
   { id: 'INV-1043', to: 'A2', toKind: 'Client', job: 'J9', amount: 150, paid: 0, terms: '30 days', issued: '4 Oct 2026', due: '3 Nov 2026', overdue: false, items: [{ activity: 'Materials', desc: 'Extractor fan 100mm with timer', qty: 1, rate: 54, amount: 54 }, { activity: 'Labour', desc: 'Remove old fan, fit and test new fan (hourly)', qty: 2, rate: 48, amount: 96 }], site: '88 Victoria Road' },
@@ -410,4 +410,29 @@ export const LEADS: Lead[] = [
   { id: 'SW6', created: '8 Oct 2026, 09:30', name: 'Hannah Price', email: 'hannah.price@mail.co.uk', phone: '07700 905006', contactPref: 'WhatsApp', permission: true, marketing: true, source: 'Instagram', campaign: 'already-paying-an-agent', owner: 'et', nextContact: '13 Oct 2026', nextNote: 'Chase the signed agreement', reason: 'Agent sold the branch', timeframe: 'Early 2027', comms: [c('9 Oct 2026, 14:00', 'Emma Thompson', 'Call', 'Cannot find the signed agreement. Will ask the agent for a copy.', 'out')],
     props: [swp({ id: 'a', address: 'Flat 1, 6 Weston Park', postcode: 'N8 9SY', area: 'Crouch End', stage: 3, route: 'Needs clarification', clarify: 'Signed agreement missing. Notice period unknown.', agent: { name: 'Stones Residential', fee: '13%', vat: 'Not known', extras: '', endDate: fact('Not known'), notice: noFact(), method: 'Not known', continuing: fact('Not known') } })] },
   { id: 'SW7', created: '5 Oct 2026, 17:45', name: 'Mark Ellis', email: 'mark.ellis@mail.co.uk', phone: '07700 905007', contactPref: 'Phone', permission: true, marketing: false, source: 'Facebook', reason: 'Asked about buying a property', timeframe: '—', owner: 'jc', comms: [c('6 Oct 2026, 10:00', 'James Carter', 'Call', 'Does not own a rental yet. Looking to buy next year.', 'out')], props: [swp({ id: 'a', address: 'Not given', postcode: 'EN1', area: 'Enfield', stage: 1 })], closed: { outcome: 'Unqualified', reason: 'Does not own a rental property yet', at: '6 Oct 2026, 10:05', by: 'James Carter' } },
+];
+
+/* ---------- products and services (saved once, picked by code on quotes and invoices) ---------- */
+export interface Product { code: string; name: string; desc: string; rate: number; kind: 'Service' | 'Material' | 'Labour' }
+export const CATALOGUE: Product[] = [
+  { code: 'CALL-OUT', name: 'Call-out', desc: 'Attend site and assess the problem', rate: 60, kind: 'Service' },
+  { code: 'LABOUR', name: 'Labour', desc: 'Labour charge (hourly)', rate: 45, kind: 'Labour' },
+  { code: 'LABOUR D/R', name: 'Labour day rate', desc: 'Labour charge day rate', rate: 350, kind: 'Labour' },
+  { code: 'MISC', name: 'Miscellaneous', desc: 'Miscellaneous expenses', rate: 0, kind: 'Material' },
+  { code: '18TH ED/SPD', name: 'Fuse board installation', desc: "18th Edition fuse board installation with SPD's", rate: 750, kind: 'Service' },
+  { code: 'LED/5FT/FLOU', name: 'LED batten fitting', desc: '4ft LED batten fitting', rate: 21.35, kind: 'Material' },
+  { code: '30WFL/PIR', name: 'LED floodlight with PIR', desc: 'LED floodlight 30W with PIR sensor', rate: 41.5, kind: 'Material' },
+  { code: '2G/WEATHER', name: 'Weatherproof socket', desc: 'Socket, weatherproof 2 gang switched IP66', rate: 23, kind: 'Material' },
+  { code: 'HEATER', name: 'Down flow heater', desc: 'Down flow heater', rate: 50.75, kind: 'Material' },
+  { code: 'SWA/CLEAT/C9', name: 'SWA cable cleats', desc: 'Cleats: clip outside SWA cable', rate: 10, kind: 'Material' },
+  { code: '10MM/EARTH', name: '10mm earth cable', desc: '10mm single earth cable: bond water or gas', rate: 1.8, kind: 'Material' },
+  { code: 'NB1.5/2', name: '1.5mm 2 core earth cable', desc: 'FP200 1.5mm 2 core earth: rewire lean-to lights', rate: 1.41, kind: 'Material' },
+  { code: 'DS/2G/INST', name: 'Double socket supply and fit', desc: '13 Amp 2 gang double switched socket, supply and fit', rate: 38, kind: 'Service' },
+  { code: 'DS/2G/WHT/BG2', name: 'BG double socket', desc: 'BG white 13A double socket and 25mm metal pattress box', rate: 14.5, kind: 'Material' },
+  { code: 'DS/2G/WHT/MK2', name: 'MK double socket', desc: 'MK white 13A double socket and 25mm metal pattress box', rate: 16.2, kind: 'Material' },
+  { code: 'MT2', name: 'Mini trunking', desc: 'MT2 25x16mm trunking, self adhesive', rate: 13.41, kind: 'Material' },
+  { code: 'T2/BENDS', name: 'Trunking bends', desc: 'MT2 trunking bends, pack of 5', rate: 5, kind: 'Material' },
+  { code: 'EE081', name: 'Replace faulty accessory', desc: 'Disconnect faulty accessory, replace and reconnect including fuses and MCB/RCBO reset, and test the circuit', rate: 37.5, kind: 'Service' },
+  { code: 'WH/3KW', name: 'Instant hand wash heater', desc: 'Triton Instaflow 3kW hand wash heater', rate: 81.9, kind: 'Material' },
+  { code: 'TAP/MIX', name: 'Mixer tap', desc: 'Kitchen mixer tap, supply and fit', rate: 95, kind: 'Service' },
 ];
