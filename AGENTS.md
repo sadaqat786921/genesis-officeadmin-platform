@@ -59,7 +59,7 @@ The client has approved this design. When editing:
 - `src/ui.tsx` also has the detail-page blocks: DetailHead, HSteps (horizontal steps), ActionCard ("Next step"), Stat, PageTabs, Timeline, CommsLog (calls/emails/notes with date and time), UploadModal, PhotoPicker.
 
 ## Rules the flows follow (from the client's flow chart)
-- Only the Supervisor creates landlords. Before creating one, check for duplicates. Plans are 12%, 16% and 20%, with job limits of £150, £200 and £300. The login email is sent from Outlook.
+- Only the Supervisor creates landlords. Before creating one, check for duplicates. Plans are 10% (Management Only, no repairs included), 12%, 16% and 20%, with job limits of £150, £200 and £300 for the last three. The login email is sent from Outlook.
 - A job above the landlord's limit goes to Approvals. Approving it takes the cost off the yearly repair budget **once**. Alerts go out at 70%, 90% and 100%.
 - There are two kinds of property:
   - **Managed:** belongs to a landlord; tenants, rent, safety checks and inspections apply.
