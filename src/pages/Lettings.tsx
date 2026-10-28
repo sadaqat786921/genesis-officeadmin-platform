@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
+import { PipeBoard, PersonChips, PipeStats, ChaseBar, ViewToggle, MoveModal, STALE_DAYS, type PCol, type PCard, type Turn, type MoveOption } from './pipeline';
 import { Plus, Home, UserCheck, Mail, CheckCircle2, XCircle, FileSignature, PoundSterling, Search as SearchIcon, CalendarClock, KeyRound, ArrowRight, Eye, Check, X, Send, Undo2, Users, Clock, Briefcase, PawPrint, MapPin, BellRing } from 'lucide-react';
 import { useStore, useLookups, money } from '../store';
-import { LET_STAGES, KYC_DOCS, TODAY_LABEL, fmtDate, nowStamp, parseDate, type Applicant, type Comm, type RefStatus } from '../data';
+import { LET_STAGES, KYC_DOCS, TODAY_LABEL, PORTAL, daysFrom, fmtDate, nowStamp, parseDate, type Applicant, type Comm, type RefStatus } from '../data';
 import { ME_NAME, ME, SUPERVISOR } from '../data';
 import { remindSupervisor, DemoAnswer } from './Requests';
 import { ActionCard, Avatar, Bar, Btn, Card, Chip, CommsLog, DetailHead, DocRow, Field, HSteps, KV, MiniSearch, Modal, Note, Reason, Select, Tabs, Text, Timeline, Empty, sortComms, dateLabel } from '../ui';
@@ -12,6 +13,7 @@ type S = ReturnType<typeof useStore>;
 const LANE_HINT = ['New applications', 'Office Admin calls or emails', 'Applicant uploads KYC on the portal', 'Deposit, contract and referencing', 'With the Supervisor', 'Move-in booked', 'Now a tenant'];
 const LANE_TONE = ['info', 'brand', 'warn', 'brand', 'ok', 'info', 'ok'] as const;
 const roomRent = (p?: { type: string; rent: number; rooms?: number }) => !p ? 0 : p.type === 'HMO' ? Math.round(p.rent / (p.rooms ?? 1)) : p.rent;
+const SUP = SUPERVISOR;
 const sys = (text: string, by = ME_NAME): Comm => ({ id: 'cm' + Date.now() + Math.random(), at: nowStamp(), by, channel: 'System', text });
 const mail = (subject: string, text: string): Comm => ({ id: 'cm' + Date.now() + Math.random(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject, text });
 const kycDone = (a: Applicant) => a.kyc.filter(d => d.status === 'Verified').length;
@@ -31,13 +33,32 @@ export function Lettings() {
   return <Board />;
 }
 
+
+/* ---- pipeline card helpers ---- */
+const IS_OA = PORTAL === 'oa';
+const MY_TURN: Turn = IS_OA ? 'Office Admin' : 'Supervisor';
+const postcode = (area?: string) => (area ?? '').split(' ').slice(-1)[0];
+const daysInStage = (a: Applicant) => Math.max(0, -daysFrom(a.since));
+const isStale = (a: Applicant) => !a.rejected && a.stage < 6 && daysInStage(a) >= STALE_DAYS;
+function turnOf(a: Applicant): Turn {
+  switch (a.stage) {
+    case 0: return a.admin ? 'Office Admin' : 'Supervisor';
+    case 1: return 'Office Admin';
+    case 2: return kycUp(a) < KYC_DOCS.length ? 'Applicant' : 'Office Admin';
+    case 3: return !checksDone(a) && a.checks.deposit && a.checks.contract && a.checks.reference === 'Waiting' ? 'Referencing' : 'Office Admin';
+    case 4: return 'Supervisor';
+    case 5: return 'Office Admin';
+    default: return 'Done';
+  }
+}
+
 function Board() {
   const s = useStore(); const L = useLookups();
-  const [home, setHome] = useState('all'); const [q, setQ] = useState(''); const [view, setView] = useState<'live' | 'stopped'>('live'); const [add, setAdd] = useState(false);
+  const [home, setHome] = useState('all'); const [q, setQ] = useState(''); const [view, setView] = useState<'board' | 'list'>('board'); const [add, setAdd] = useState(false);
+  const [who, setWho] = useState('all'); const [chase, setChase] = useState(false); const [mv, setMv] = useState<string | null>(null);
   const [portal, setPortal] = useState<string | null>(null); const [moved, setMoved] = useState<string | null>(null); const [book, setBook] = useState<string | null>(null);
   const homes = [...new Set(s.applicants.map(a => a.property))];
-  const all = s.applicants.filter(a => (home === 'all' || a.property === home) && a.name.toLowerCase().includes(q.toLowerCase()));
-  const live = all.filter(a => !a.rejected); const stopped = all.filter(a => a.rejected);
+  const all = s.applicants.filter(a => (home === 'all' || a.property === home) && (who === 'all' || a.admin === who) && (!chase || isStale(a)) && (a.name + (L.prop(a.property)?.address ?? '')).toLowerCase().includes(q.toLowerCase()));
   const nextBtn = (a: Applicant): { label: string; run: () => void; kind?: 'primary' | 'outline' } => {
     const open = () => s.go('lettings', a.id);
     switch (a.stage) {
@@ -45,39 +66,78 @@ function Board() {
       case 1: return { label: 'Send portal login', run: () => setPortal(a.id) };
       case 2: return kycDone(a) === KYC_DOCS.length ? { label: 'Approve profile', run: open } : { label: kycUp(a) === KYC_DOCS.length ? 'Check documents' : 'See documents', run: open, kind: kycUp(a) === KYC_DOCS.length ? 'primary' : 'outline' };
       case 3: return { label: checksDone(a) ? 'Send to Supervisor' : 'Open checklist', run: open, kind: checksDone(a) ? 'primary' : 'outline' };
-      case 4: return { label: `With ${SUPERVISOR.split(' ')[0]} · remind`, run: () => remindSupervisor(s, `the tenant review for ${a.name}`), kind: 'outline' };
+      case 4: return { label: `Remind ${SUPERVISOR.split(' ')[0]}`, run: () => remindSupervisor(s, `the tenant review for ${a.name}`), kind: 'outline' };
       case 5: return a.moveInAt ? { label: 'Mark moved in', run: () => setMoved(a.id) } : { label: 'Book move-in', run: () => setBook(a.id) };
       default: return { label: 'Open tenant', run: () => a.tenant && s.go('tenants', a.tenant), kind: 'outline' };
     }
   };
   const one = (id: string | null) => id ? s.applicants.find(x => x.id === id) : undefined;
+  const rentOf = (a: Applicant) => roomRent(L.prop(a.property)) || a.budget;
+  const move = (a: Applicant, stage: number, msg: string, note: string) => { s.setApplicants(as => as.map(x => x.id === a.id ? { ...x, stage, since: TODAY_LABEL, ...(stage === 4 ? { review: 'Deposit received, agreement signed by all, referencing passed.' } : {}), comms: [...x.comms, sys(note)] } : x)); s.log(msg, 'Lettings'); s.toast(msg); };
+  /** What moving one stage forward needs. Returns the action, or the reason it is locked. */
+  const step = (a: Applicant): { run: () => void; note: string } | { reason: string } => {
+    switch (a.stage) {
+      case 0: return a.admin ? { note: `${adminName(a.admin)} calls or emails them.`, run: () => move(a, 1, `${a.name} moved to Contact`, 'Moved to Contact.') } : { reason: 'Assign an Office Admin first.' };
+      case 1: return { note: 'Sends the tenant portal login so they can upload KYC.', run: () => setPortal(a.id) };
+      case 2: return kycDone(a) === KYC_DOCS.length ? { note: 'Approves the profile. All 5 documents are checked.', run: () => move(a, 3, `KYC approved for ${a.name}`, 'Profile approved. All KYC documents verified.') } : { reason: `${KYC_DOCS.length - kycDone(a)} of 5 KYC documents still need checking.` };
+      case 3: return checksDone(a) ? { note: IS_OA ? `Sends it to ${SUP} for the final review.` : 'Marks it complete for your review.', run: () => move(a, 4, IS_OA ? `${a.name} sent to ${SUP} for review` : `${a.name} is ready for Supervisor review`, IS_OA ? `Marked complete. Sent to ${SUP} for review.` : 'Marked complete. Waiting for Supervisor review.') } : { reason: 'Deposit, contract and referencing must all be done first.' };
+      case 4: return IS_OA ? { reason: 'Only the Supervisor can approve a new tenant.' } : { note: 'Approve the tenant and book the move-in date.', run: () => setBook(a.id) };
+      case 5: return a.moveInAt ? { note: 'Creates the tenant account after the keys are handed over.', run: () => setMoved(a.id) } : { reason: 'Book the move-in date and time first.' };
+      default: return { reason: 'Already a tenant.' };
+    }
+  };
+  const tryMove = (a: Applicant, to: number) => {
+    if (to === a.stage) return;
+    if (to !== a.stage + 1) { s.toast(to < a.stage ? 'Open the applicant to send them back. A reason is needed.' : 'One stage at a time, so no check is skipped.'); return; }
+    const r = step(a); if ('reason' in r) s.toast(r.reason); else r.run();
+  };
+  const live = all.filter(a => !a.rejected);
+  const stale = s.applicants.filter(isStale);
+  const people = [...new Set(s.applicants.filter(a => !a.rejected && a.admin).map(a => a.admin!))].map(id => ({ id, count: s.applicants.filter(a => !a.rejected && a.admin === id && a.stage < 6).length })).filter(x => x.count > 0);
+  const card = (a: Applicant): PCard => {
+    const p = L.prop(a.property); const nb = nextBtn(a); const d = daysInStage(a); const turn = turnOf(a); const r = step(a);
+    return {
+      key: a.id, name: a.name, photo: p?.photo, sub: `${p?.address.replace(' (HMO)', '')}${a.room ? ' · ' + a.room : ''} · ${postcode(p?.area)}`,
+      amount: money(rentOf(a)), amountNote: ' pcm', owner: IS_OA ? undefined : a.admin, badge: !a.admin ? 'Unassigned' : undefined,
+      status: <CardStatus a={a} />, turn, next: a.stage < 6 ? nb.label : undefined, mine: turn === MY_TURN && a.stage < 6 && !isStale(a) && (!IS_OA || !('reason' in r)),
+      when: a.stage === 0 ? `Wants to move in ${a.moveIn.replace(/ 20\d\d/, '')}` : a.stage === 5 && a.moveInAt ? `Move-in ${a.moveInAt.replace(' 2026', '')}` : undefined,
+      age: a.stage < 6 ? (d ? `${d} day${d > 1 ? 's' : ''} in ${LET_STAGES[a.stage]}` : `New in ${LET_STAGES[a.stage]} today`) : undefined, stale: isStale(a),
+      action: { label: isStale(a) && 'reason' in r && turn === 'Applicant' ? 'Chase applicant' : nb.label, run: nb.run, kind: nb.kind },
+      onMove: a.stage < 6 ? () => setMv(a.id) : undefined, onOpen: () => s.go('lettings', a.id),
+    };
+  };
+  const cols: PCol[] = [
+    ...LET_STAGES.map((st, i) => { const lane = live.filter(a => a.stage === i); return { key: String(i), title: st, tone: LANE_TONE[i], hint: LANE_HINT[i], total: lane.length ? money(lane.reduce((x, a) => x + rentOf(a), 0)) : undefined, cards: lane.map(card) }; }),
+    { key: 'stop', title: 'Not going ahead', tone: 'err', hint: 'Stopped, with the reason saved', cards: all.filter(a => a.rejected).map(a => { const p = L.prop(a.property); return { key: a.id, name: a.name, photo: p?.photo, sub: `${p?.address.replace(' (HMO)', '')} · ${postcode(p?.area)}`, amount: money(rentOf(a)), amountNote: ' pcm', owner: IS_OA ? undefined : a.admin, muted: true, status: <span>{a.rejected!.reason}</span>, next: `Stopped at ${LET_STAGES[a.stage]}`, age: `${a.rejected!.at.split(',')[0]} · ${a.rejected!.by}`, onOpen: () => s.go('lettings', a.id) }; }) },
+  ];
+  const ma = one(mv);
+  const moveOpts = (a: Applicant): MoveOption[] => LET_STAGES.map((st, i) => {
+    if (i < a.stage) return { key: String(i), label: st, state: 'done', note: 'Done. Open the applicant to send them back with a reason.' };
+    if (i === a.stage) return { key: String(i), label: st, state: 'current', note: LANE_HINT[i] };
+    if (i === a.stage + 1) { const r = step(a); return 'reason' in r ? { key: String(i), label: st, state: 'blocked', note: r.reason } : { key: String(i), label: st, state: 'ok', note: r.note }; }
+    return { key: String(i), label: st, state: 'blocked', note: 'Comes later. One stage at a time.' };
+  });
   return <>
-    <PageHeader crumbs={crumbsFor('lettings', s.go)} title="Lettings" action={<Btn icon={<Plus size={18} />} onClick={() => setAdd(true)}>Add applicant</Btn>} />
-    <div className="stagebar">{LET_STAGES.map((st, i) => <button key={st} className={`sb-st t-${LANE_TONE[i]}`} onClick={() => { setView('live'); setTimeout(() => document.getElementById('lane' + i)?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }), 30); }}><b>{live.filter(a => a.stage === i).length}</b><span>{st}</span></button>)}</div>
-    <div className="toolbar">
-      <MiniSearch value={q} onChange={setQ} placeholder="Search applicants" />
-      <div style={{ width: 230 }}><Select value={home} onChange={setHome} options={[{ value: 'all', label: 'All homes' }, ...homes.map(h => ({ value: h, label: L.prop(h)?.address ?? h }))]} /></div>
+    <PageHeader crumbs={crumbsFor('lettings', s.go)} title="Lettings" action={<div className="flex"><ViewToggle value={view} onChange={setView} items={[{ id: 'board', label: 'Board', icon: 'board' }, { id: 'list', label: 'List', icon: 'list' }]} /><Btn icon={<Plus size={18} />} onClick={() => setAdd(true)}>Add applicant</Btn></div>} />
+    <div className="ptool">
+      {IS_OA ? <><MiniSearch value={q} onChange={setQ} placeholder="Search applicant or home" /><div style={{ width: 210 }}><Select value={home} onChange={setHome} options={[{ value: 'all', label: 'All homes' }, ...homes.map(h => ({ value: h, label: L.prop(h)?.address ?? h }))]} /></div></> : <PersonChips value={who} onChange={setWho} people={people} />}
       <div className="grow" />
-      <Tabs value={view} onChange={setView} items={[{ id: 'live', label: 'In progress', count: live.filter(a => a.stage < 6).length }, { id: 'stopped', label: 'Not going ahead', count: stopped.length }]} />
+      <PipeStats items={[['In progress', live.filter(a => a.stage < 6).length], ['Rent if all move in', money(live.filter(a => a.stage < 6).reduce((x, a) => x + rentOf(a), 0)) + ' pcm'], ['Moved in', live.filter(a => a.stage === 6).length, 'ok']]} />
     </div>
-    {view === 'live' ? <div className="kanban lk">{LET_STAGES.map((st, i) => { const lane = live.filter(a => a.stage === i); return <div className="lane" key={st} id={'lane' + i}>
-      <div className="lane-h"><span className={`lane-n t-${LANE_TONE[i]}`}>{i + 1}</span><div className="stack grow"><b>{st}</b><span className="caption">{LANE_HINT[i]}</span></div><span className="count">{lane.length}</span></div>
-      {lane.map(a => { const p = L.prop(a.property); const nb = nextBtn(a); return <div key={a.id} className="kcard lcard" role="button" tabIndex={0} onClick={() => s.go('lettings', a.id)} onKeyDown={e => e.key === 'Enter' && s.go('lettings', a.id)}>
-
-        <div className="flex"><Avatar name={a.name} /><div className="stack grow"><b>{a.name}</b><span className="caption">{a.source} · {a.applied.split(',')[0].replace(' 2026', '')}</span></div></div>
-        <span className="caption flex" style={{ gap: 5 }}><Home size={12} />{p?.address.replace(' (HMO)', '')}{a.room ? ` · ${a.room}` : ''}</span>
-        <CardStatus a={a} />
-        <span className="caption">In this stage since {a.since}</span>
-        <div onClick={e => e.stopPropagation()}><Btn sm block kind={nb.kind ?? 'primary'} onClick={() => nb.run()}>{nb.label}</Btn></div>
-      </div>; })}
-      {!lane.length && <div className="lane-empty">No one here</div>}
-    </div>; })}</div>
-      : <Card title="Not going ahead" sub="Applications that stopped. The reason is saved.">
-        <div className="tablewrap"><table className="t"><thead><tr><th>Applicant</th><th>Home</th><th>Stopped at</th><th>Reason</th><th>When</th><th>By</th></tr></thead><tbody>
-          {stopped.map(a => <tr key={a.id} onClick={() => s.go('lettings', a.id)}><td><span className="cell"><Avatar name={a.name} /><b className="strong">{a.name}</b></span></td><td>{L.prop(a.property)?.address}</td><td>{LET_STAGES[a.stage]}</td><td>{a.rejected!.reason}</td><td>{a.rejected!.at}</td><td>{a.rejected!.by}</td></tr>)}
-        </tbody></table>{!stopped.length && <Empty>None.</Empty>}</div></Card>}
+    {!IS_OA && <div className="ptool"><MiniSearch value={q} onChange={setQ} placeholder="Search applicant or home" /><div style={{ width: 210 }}><Select value={home} onChange={setHome} options={[{ value: 'all', label: 'All homes' }, ...homes.map(h => ({ value: h, label: L.prop(h)?.address ?? h }))]} /></div></div>}
+    <ChaseBar count={stale.length} what="applicant" rule={`${STALE_DAYS}+ days in the same stage.`} onShow={() => setChase(c => !c)} showing={chase} />
+    {view === 'board' ? <PipeBoard cols={cols} onDrop={(id, col) => { const a = one(id); if (a && col !== 'stop') tryMove(a, +col); else if (a) s.toast('Open the applicant to stop the application. A reason is needed.'); }}
+      hint="Drag a card to the next stage, or use Move. Each move checks the rules first, so a stage is never skipped. Open a card to see everything about the applicant." />
+      : <Card title="All applicants" sub="Sorted by the longest wait first."><div className="tablewrap"><table className="t"><thead><tr><th>Applicant</th><th>Home</th><th>Stage</th><th>Whose turn</th><th>Next</th><th>Waiting</th><th>Rent</th>{!IS_OA && <th>Office Admin</th>}</tr></thead><tbody>
+        {[...live].sort((x, y) => daysInStage(y) - daysInStage(x)).map(a => { const p = L.prop(a.property); const t2 = turnOf(a); return <tr key={a.id} onClick={() => s.go('lettings', a.id)}>
+          <td><span className="cell"><img className="pthumb" src={p?.photo} alt="" /><span className="stack"><b className="strong">{a.name}</b><span className="caption">{a.source}</span></span></span></td>
+          <td>{p?.address.replace(' (HMO)', '')}{a.room ? ' · ' + a.room : ''}</td><td><Chip tone={LANE_TONE[a.stage]}>{LET_STAGES[a.stage]}</Chip></td>
+          <td><span className={`pturn t-${t2 === 'Supervisor' ? 'brand' : t2 === 'Office Admin' ? 'info' : t2 === 'Done' ? 'ok' : 'warn'}`}>{t2}</span></td><td>{a.stage < 6 ? nextBtn(a).label : 'Open tenant'}</td>
+          <td>{a.stage < 6 ? <b className={isStale(a) ? 'c-err' : ''}>{daysInStage(a)} days</b> : <span className="muted">—</span>}</td><td><b>{money(rentOf(a))}</b></td>{!IS_OA && <td>{a.admin ? <span className="cell"><Avatar id={a.admin} />{adminName(a.admin)}</span> : <Chip tone="warn">Unassigned</Chip>}</td>}</tr>; })}
+      </tbody></table>{!live.length && <Empty>No applicants match.</Empty>}</div></Card>}
+    {ma && <MoveModal name={ma.name} options={moveOpts(ma)} onClose={() => setMv(null)} onPick={() => { setMv(null); tryMove(ma, ma.stage + 1); }} />}
     {add && <AddApplicant onClose={() => setAdd(false)} />}
-
+    
     {portal && <PortalModal a={one(portal)!} onClose={() => setPortal(null)} />}
     {moved && <MovedInModal a={one(moved)!} onClose={() => setMoved(null)} />}
     {book && <MoveInModal a={one(book)!} onClose={() => setBook(null)} />}
@@ -87,7 +147,7 @@ function Board() {
 function CardStatus({ a }: { a: Applicant }) {
   const L = useLookups(); const last = sortComms(a.comms)[0];
   switch (a.stage) {
-    case 0: return <div className="flex wrap" style={{ gap: 6 }}><Chip tone="neutral" dot={false}>{money(a.budget)} pcm</Chip><Chip tone="neutral" dot={false}>From {a.moveIn.replace(' 2026', '').replace(' 2027', '')}</Chip></div>;
+    case 0: return <span>{a.source} · {a.household}</span>;
     case 1: return last ? <span className="caption">Last: {last.channel.toLowerCase()} · {last.at.replace(' 2026', '')}</span> : <Chip tone="warn">Not contacted yet</Chip>;
     case 2: return <div className="stack" style={{ gap: 5 }}><span className="caption">KYC: {kycUp(a)}/5 uploaded · {kycDone(a)} checked</span><Bar value={kycUp(a) / 5 * 100} tone={kycDone(a) === 5 ? 'ok' : 'brand'} /></div>;
     case 3: return <div className="flex wrap" style={{ gap: 6 }}><Chip tone={a.checks.deposit ? 'ok' : 'neutral'} dot={false}>{a.checks.deposit ? <Check size={11} /> : null}Deposit</Chip><Chip tone={a.checks.contract ? 'ok' : 'neutral'} dot={false}>{a.checks.contract ? <Check size={11} /> : null}Contract</Chip><Chip tone={a.checks.reference === 'Passed' ? 'ok' : a.checks.reference === 'Failed' ? 'err' : 'warn'} dot={false}>Ref: {a.checks.reference}</Chip></div>;

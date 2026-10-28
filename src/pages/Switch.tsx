@@ -5,6 +5,7 @@ import { SW_STAGES, HANDOVER, PORTAL, ME, ME_NAME, SUPERVISOR, nowStamp, daysFro
 import { ActionCard, Avatar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, HSteps, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Reason, Select, Tabs, Text, Area, Timeline, When, Empty, UploadModal, dateLabel } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { AssignAdminModal, NewLandlordModal, adminName } from './shared';
+import { PipeBoard, PersonChips, PipeStats, ChaseBar, MoveModal, type PCol, type PCard, type Turn, type MoveOption } from './pipeline';
 
 /* Planned Switch: landlords who already pay another managing agent.
    Enquiry → contact → check the current agent's contract and dates → decide (ready / later / clarify)
@@ -80,48 +81,89 @@ export function Switch() {
 }
 
 /* ---------------- board, calendar, closed, report ---------------- */
+const ACT = ['Call landlord', 'Log contact', 'Check contract', 'Decide route', 'Record reply', 'Approve onboarding', 'Open checklist', 'Open home'];
+const NEXT = ['Call the landlord', 'Log the call or email', 'Check the agent contract and dates', 'Decide: ready, later or clarify', 'Record the landlord’s reply', 'Approve onboarding', 'Finish the handover checklist', 'Managed home'];
+function swTurn(l: Lead, p: SwProp): Turn { return p.stage === 0 ? (l.owner ? 'Office Admin' : 'Supervisor') : p.stage === 4 ? 'Landlord' : p.stage === 5 ? 'Supervisor' : p.stage === 7 ? 'Done' : 'Office Admin'; }
+const swNext = (l: Lead, p: SwProp) => p.stage === 0 && !l.owner ? 'Give to an Office Admin' : p.stage === 3 && p.route === 'Ready to plan' ? 'Send the proposal' : p.stage === 5 && IS_OA ? `Ask ${SUPERVISOR.split(' ')[0]} to approve onboarding` : NEXT[p.stage];
+const overdueBy = (l: Lead) => l.nextContact ? -daysFrom(l.nextContact) : 0;
+const swStale = (l: Lead, p: SwProp) => p.stage < 7 && overdueBy(l) > 0;
+
 function Board() {
   const s = useStore();
   const [view, setView] = useState<'board' | 'calendar' | 'closed' | 'report'>('board');
   const [q, setQ] = useState(''); const [area, setArea] = useState('all'); const [owner, setOwner] = useState('all'); const [agent, setAgent] = useState('all'); const [add, setAdd] = useState(false);
+  const [chase, setChase] = useState(false); const [mv, setMv] = useState<string | null>(null);
   const open = s.leads.filter(l => !l.closed);
-  const cards = open.flatMap(l => l.props.map(p => ({ l, p }))).filter(({ l, p }) => (area === 'all' || p.area === area) && (owner === 'all' || (owner === 'none' ? !l.owner : l.owner === owner)) && (agent === 'all' || p.agent.name === agent) && (l.name + p.address + p.agent.name + p.postcode).toLowerCase().includes(q.toLowerCase()));
+  const cards = open.flatMap(l => l.props.map(p => ({ l, p }))).filter(({ l, p }) => (area === 'all' || p.area === area) && (owner === 'all' || (owner === 'none' ? !l.owner : l.owner === owner)) && (agent === 'all' || p.agent.name === agent) && (!chase || swStale(l, p)) && (l.name + p.address + p.agent.name + p.postcode).toLowerCase().includes(q.toLowerCase()));
   const cal = calendar(s);
-  const overdue = cal.filter(c => c.days < 0).length;
   const agents = [...new Set(s.leads.flatMap(l => l.props.map(p => p.agent.name)).filter(Boolean))];
+  const stale = open.flatMap(l => l.props.filter(p => swStale(l, p)));
+  const people = [...new Set(open.map(l => l.owner).filter(Boolean) as string[])].map(id => ({ id, count: open.filter(l => l.owner === id).length }));
+  const find = (key: string) => { const [lid, pid] = key.split('.'); const l = s.leads.find(x => x.id === lid); const p = l?.props.find(x => x.id === pid); return l && p ? { l, p } : undefined; };
+  const step = (l: Lead, p: SwProp): { run: () => void; note: string } | { reason: string } => {
+    switch (p.stage) {
+      case 0: return l.owner ? { note: `${adminName(l.owner)} calls or emails the landlord.`, run: () => updProp(s, l, p.id, { stage: 1 }, `${l.name} moved to Contact pending`, sys('Moved to Contact pending.')) } : { reason: IS_OA ? `${SUPERVISOR} gives it to an Office Admin first.` : 'Give it to an Office Admin first.' };
+      case 1: return l.comms.some(c => c.channel === 'Call' || c.channel === 'Email') ? { note: 'Starts the check of the agent contract and dates.', run: () => updProp(s, l, p.id, { stage: 2 }, `Assessment started for ${p.address}`, sys('Assessment started.')) } : { reason: 'Log a call or email with the landlord first.' };
+      case 2: return { reason: 'Open the lead and choose Ready to plan, Future switch or Needs clarification.' };
+      case 3: return { reason: p.route === 'Ready to plan' ? 'Open the lead to write and send the proposal.' : `The route is ${p.route ?? 'not set'}. Only Ready to plan goes to a proposal.` };
+      case 4: return { reason: 'Open the lead to upload the signed agreement.' };
+      case 5: return { reason: IS_OA ? 'Only the Supervisor approves onboarding and creates the landlord.' : 'Open the lead to approve onboarding and create the landlord.' };
+      case 6: return { reason: 'Finish the handover checklist on the lead page.' };
+      default: return { reason: 'Already a managed home.' };
+    }
+  };
+  const tryMove = (l: Lead, p: SwProp, to: number) => {
+    if (to === p.stage) return;
+    if (to !== p.stage + 1) { s.toast(to < p.stage ? 'Open the lead to change an earlier step.' : 'One stage at a time, so no check is skipped.'); return; }
+    const r = step(l, p); if ('reason' in r) s.toast(r.reason); else r.run();
+  };
+  const card = ({ l, p }: { l: Lead; p: SwProp }): PCard => {
+    const od = overdueBy(l); const turn = swTurn(l, p); const go = () => s.go('switch', `${l.id}.${p.id}`);
+    return {
+      key: `${l.id}.${p.id}`, name: l.name, sub: `${p.address}${p.postcode ? ' · ' + p.postcode : ''} · ${p.area}`,
+      amount: p.rent ? money(p.rent) : undefined, amountNote: p.rent ? ' pcm' : undefined, owner: IS_OA ? undefined : l.owner,
+      badge: !l.owner ? 'Unassigned' : p.proposal ? `${p.proposal.plan}% plan` : undefined,
+      status: <><span className="flex" style={{ gap: 6 }}><Building2 size={13} />{p.agent.name || 'Agent not named yet'}</span>{p.route && <Chip tone={ROUTE_TONE[p.route]}>{p.route}</Chip>}{p.proposal && <Chip tone="brand" dot={false}>Proposal · {p.proposal.response}</Chip>}</>,
+      turn, next: p.stage < 7 ? swNext(l, p) : undefined, mine: p.stage < 7 && turn === (IS_OA ? 'Office Admin' : 'Supervisor') && !swStale(l, p) && (!IS_OA || !('reason' in step(l, p))),
+      when: l.nextContact && p.stage < 7 && od <= 0 ? `Follow-up ${l.nextContact.replace(' 2026', '')}` : p.stage === 7 && p.activated ? `Live since ${p.activated.split(',')[0]}` : undefined,
+      age: od > 0 && p.stage < 7 ? `Follow-up overdue by ${od} day${od > 1 ? 's' : ''}` : `${l.source}${l.props.length > 1 ? ` · ${l.props.length} properties` : ''}`, stale: swStale(l, p),
+      action: { label: od > 0 && p.stage < 7 ? 'Log follow-up' : p.stage === 0 && !l.owner ? 'Assign' : p.stage === 3 && p.route === 'Ready to plan' ? 'Send proposal' : p.stage === 5 && IS_OA ? 'Remind' : ACT[p.stage], run: p.stage === 7 && p.propertyId ? () => s.go('properties', p.propertyId!) : go, kind: p.stage === 7 || turn === 'Landlord' ? 'outline' : 'primary' },
+      onMove: p.stage < 7 ? () => setMv(`${l.id}.${p.id}`) : undefined, onOpen: go,
+    };
+  };
+  const cols: PCol[] = SW_STAGES.map((st, i) => { const lane = cards.filter(c => c.p.stage === i); const rent = lane.reduce((x, c) => x + (c.p.rent || 0), 0); return { key: String(i), title: st, tone: LANE_TONE[i], hint: LANE_HINT[i], total: rent ? money(rent) : undefined, cards: lane.map(card) }; });
+  const mm = mv ? find(mv) : undefined;
+  const moveOpts = (l: Lead, p: SwProp): MoveOption[] => SW_STAGES.map((st, i) => {
+    if (i < p.stage) return { key: String(i), label: st, state: 'done', note: 'Done.' };
+    if (i === p.stage) return { key: String(i), label: st, state: 'current', note: LANE_HINT[i] };
+    if (i === p.stage + 1) { const r = step(l, p); return 'reason' in r ? { key: String(i), label: st, state: 'blocked', note: r.reason } : { key: String(i), label: st, state: 'ok', note: r.note }; }
+    return { key: String(i), label: st, state: 'blocked', note: 'Comes later. One stage at a time.' };
+  });
   return <>
     <PageHeader crumbs={crumbsFor('switch', s.go)} title="Planned Switch" action={<Btn icon={<Plus size={18} />} onClick={() => setAdd(true)}>New lead</Btn>} />
-    <div className="grid g4">
-      <Kpi icon={<ArrowRightLeft size={18} />} tone="brand" label="Open leads" value={open.length} caption={`${open.reduce((a, l) => a + l.props.length, 0)} properties · North London`} active={view === 'board'} onClick={() => setView('board')} />
-      <Kpi icon={<AlertTriangle size={18} />} tone="err" label="Overdue follow-ups" value={overdue} caption="call them today" active={view === 'calendar'} onClick={() => setView('calendar')} />
-      <Kpi icon={<CalendarClock size={18} />} tone="warn" label="Due in 90 days" value={cal.filter(c => c.days >= 0 && c.days <= 90).length} caption="follow-ups and confirmed notice dates" onClick={() => setView('calendar')} />
-      <Kpi icon={<KeyRound size={18} />} tone="ok" label="Signed, not live yet" value={open.flatMap(l => l.props).filter(p => p.stage === 5 || p.stage === 6).length} caption="not counted as managed" onClick={() => setView('board')} />
+    <div className="ptool">
+      {!IS_OA ? <PersonChips value={owner} onChange={setOwner} people={people} /> : <Tabs value={view} onChange={setView} items={[{ id: 'board', label: 'Board' }, { id: 'calendar', label: 'Switching calendar', count: cal.filter(c => c.days <= 90).length }, { id: 'closed', label: 'Closed', count: s.leads.filter(l => l.closed).length }]} />}
+      <div className="grow" />
+      <PipeStats items={[['Open leads', open.length], ['Properties', open.reduce((a, l) => a + l.props.length, 0)], ['Rent to take on', money(open.flatMap(l => l.props).filter(p => p.stage < 7).reduce((a, p) => a + (p.rent || 0), 0)) + ' pcm'], ['Signed, not live yet', open.flatMap(l => l.props).filter(p => p.stage === 5 || p.stage === 6).length, 'ok']]} />
     </div>
-    <Note>For landlords who already pay another managing agent. Genesis records facts and staff decisions. It never serves notice, contacts the old agent or promises a fee-free exit. Estimated dates are never shown as confirmed.</Note>
-    <div className="toolbar">
+    <div className="ptool">
       <MiniSearch value={q} onChange={setQ} placeholder="Search landlord, address or agent" />
       <div style={{ width: 170 }}><Select value={area} onChange={setArea} options={[{ value: 'all', label: 'All areas' }, ...AREAS.map(a => ({ value: a, label: a }))]} /></div>
       <div style={{ width: 190 }}><Select value={agent} onChange={setAgent} options={[{ value: 'all', label: 'All current agents' }, ...agents.map(a => ({ value: a, label: a }))]} /></div>
-      {!IS_OA && <div style={{ width: 180 }}><Select value={owner} onChange={setOwner} options={[{ value: 'all', label: 'Every owner' }, { value: 'none', label: 'Not assigned' }, ...s.staff.filter(x => x.role === 'Office Admin' && x.active).map(a => ({ value: a.id, label: a.name }))]} /></div>}
       <div className="grow" />
-      <Tabs value={view} onChange={setView} items={[{ id: 'board', label: 'Board' }, { id: 'calendar', label: 'Switching calendar', count: cal.filter(c => c.days <= 90).length }, { id: 'closed', label: 'Closed', count: s.leads.filter(l => l.closed).length }, ...(!IS_OA ? [{ id: 'report' as const, label: 'Report' }] : [])]} />
+      {!IS_OA && <Tabs value={view} onChange={setView} items={[{ id: 'board', label: 'Board' }, { id: 'calendar', label: 'Switching calendar', count: cal.filter(c => c.days <= 90).length }, { id: 'closed', label: 'Closed', count: s.leads.filter(l => l.closed).length }, { id: 'report' as const, label: 'Report' }]} />}
     </div>
-    {view === 'board' && <div className="kanban lk">{SW_STAGES.map((st, i) => { const lane = cards.filter(c => c.p.stage === i); return <div className="lane" key={st}>
-      <div className="lane-h"><span className={`lane-n t-${LANE_TONE[i]}`}>{i + 1}</span><div className="stack grow"><b>{st}</b><span className="caption">{LANE_HINT[i]}</span></div><span className="count">{lane.length}</span></div>
-      {lane.map(({ l, p }) => { const due = l.nextContact ? daysFrom(l.nextContact) : undefined; return <div key={l.id + p.id} className="kcard lcard" role="button" tabIndex={0} onClick={() => s.go('switch', `${l.id}.${p.id}`)} onKeyDown={e => e.key === 'Enter' && s.go('switch', `${l.id}.${p.id}`)}>
-        <div className="flex"><Avatar name={l.name} /><div className="stack grow"><b>{l.name}</b><span className="caption">{l.source}{l.props.length > 1 ? ` · ${l.props.length} properties` : ''}</span></div></div>
-        <span className="caption flex" style={{ gap: 5 }}><Home size={12} />{p.address} · {p.area}</span>
-        <span className="caption flex" style={{ gap: 5 }}><Building2 size={12} />{p.agent.name || 'Agent not named yet'}</span>
-        <div className="flex wrap" style={{ gap: 6 }}>{p.route && <Chip tone={ROUTE_TONE[p.route]}>{p.route}</Chip>}{p.proposal && <Chip tone="brand" dot={false}>{p.proposal.plan}% · {p.proposal.response}</Chip>}{due !== undefined && <Chip tone={due < 0 ? 'err' : due <= 7 ? 'warn' : 'neutral'} dot={false}><CalendarClock size={11} /> {due < 0 ? 'Overdue' : l.nextContact!.replace(' 2026', '')}</Chip>}</div>
-        {!IS_OA && (l.owner ? <span className="flex caption" style={{ gap: 6 }}><Avatar id={l.owner} /><span style={{ fontWeight: 600 }}>{adminName(l.owner)}</span></span> : <Chip tone="warn">Not assigned</Chip>)}
-      </div>; })}
-      {!lane.length && <div className="lane-empty">No one here</div>}
-    </div>; })}</div>}
+    {view === 'board' && <>
+      <ChaseBar count={stale.length} what="lead" rule="The follow-up date has passed." onShow={() => setChase(c => !c)} showing={chase} />
+      <PipeBoard cols={cols} onDrop={(key, col) => { const f = find(key); if (f) tryMove(f.l, f.p, +col); }}
+        hint="For landlords who already pay another agent. Genesis records facts and staff decisions. It never serves notice, contacts the old agent or promises a fee-free exit. Estimated dates are never shown as confirmed." />
+    </>}
     {view === 'calendar' && <SwitchCalendar />}
     {view === 'closed' && <Card title="Closed leads" sub="Not proceeding or unqualified. The reason is saved."><div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Area</th><th>Outcome</th><th>Reason</th><th>When</th><th>By</th></tr></thead><tbody>
       {s.leads.filter(l => l.closed).map(l => <tr key={l.id} onClick={() => s.go('switch', l.id)}><td><span className="cell"><Avatar name={l.name} /><b className="strong">{l.name}</b></span></td><td>{l.props[0]?.area}</td><td><Chip tone="neutral">{l.closed!.outcome}</Chip></td><td>{l.closed!.reason}</td><td><When at={l.closed!.at} /></td><td>{l.closed!.by}</td></tr>)}
     </tbody></table>{!s.leads.some(l => l.closed) && <Empty>None.</Empty>}</div></Card>}
     {view === 'report' && <SwitchReport />}
+    {mm && <MoveModal name={mm.l.name} options={moveOpts(mm.l, mm.p)} onClose={() => setMv(null)} onPick={() => { setMv(null); tryMove(mm.l, mm.p, mm.p.stage + 1); }} />}
     {add && <NewLead onClose={() => setAdd(false)} />}
   </>;
 }
