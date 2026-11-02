@@ -41,7 +41,7 @@ The client has approved this design. When editing:
 - `src/pages/Landing.tsx`: public website at `#/home` (Services with "Full management & Maintenance" highlighted, Plans, the Genesis platform shown as two phone mockups (landlord app home and tenant app home), About, Contact Us / "Join our Platform", FAQ; the header "Join Waitlist" button and portal buttons open a waitlist modal). Styles are the `.lp-` section at the end of `app.css`.
 - `src/App.tsx`: the login gate (`#/login`), then the sidebar plus the page for the current route.
 - `src/Shell.tsx`: sidebar menu (`NAV`), page header (global search, alerts, calendar), breadcrumbs and Login (sign in, then a 6-digit security code; demo code `123456`; 5 wrong tries lock the account).
-- `src/ui.tsx`: shared UI. Chip, Btn, IBtn, Card, Avatar, Bar, Tabs, MiniSearch, Drawer, Modal, Field, Text, Select, KV, Note, Steps, Toasts, Reason (a modal that requires a reason), Kpi.
+- `src/ui.tsx`: shared UI. Chip, Btn, IBtn, Card, Avatar, Bar, Tabs, MiniSearch, Drawer, Modal (every Drawer and Modal has Minimise, Expand and Close in its header; a minimised pop-up becomes a bar at the bottom right, keeps what was typed and leaves the page usable; several stack side by side; CSS `.popctl`, `.popdock`, `.popmin`, `.popmax`), Field, Text, Select, KV, Note, Steps, Toasts, Reason (a modal that requires a reason), Kpi.
 - `src/store.tsx`: shared demo state, plus `go(route, id)`, `toast()` and `log()`. Every action writes to Records & History.
 - `src/data.ts`: sample data. Demo "today" is 15 Oct 2026.
 - `src/pages/Today.tsx` is **My Day**, `Tasks.tsx` is **My Tasks**, `Requests.tsx` is **Sent to Supervisor** (requests, repair approvals, repair budgets), `Records.tsx` is **My History** (ask to unlock).
