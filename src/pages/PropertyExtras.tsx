@@ -3,7 +3,10 @@ import { Wrench, ShieldCheck, ClipboardCheck, PoundSterling, Users, Home, Receip
 import { useStore, useLookups, money, rentStatus } from '../store';
 import { parseDate, PLAN, type Property, type Tone } from '../data';
 import { ME_NAME } from '../data';
-import { Btn, Card, Chip, Empty, Stat, Tabs, Note } from '../ui';
+import { Btn, Card, Chip, Empty, Stat, Tabs, Note, FilterBar, applyFlt, useFlt } from '../ui';
+import { feeOf, isLeased, LSP_NAME } from '../pricing';
+import { OwnerPayTable, payOwner } from './Money';
+import { PaymentModal } from './shared';
 import { InvoiceTable } from './tables';
 import { downloadPdf } from './docs';
 
@@ -49,12 +52,13 @@ export function PropertyHistory({ p }: { p: Property }) {
   const s = useStore(); const L = useLookups();
   const all = propertyHistory(s, L, p);
   const kinds: Kind[] = p.managed ? ['Jobs', 'Compliance', 'Inspections', 'Rent & invoices', 'Tenancy', 'Property'] : ['Jobs', 'Rent & invoices', 'Property'];
-  const [f, setF] = useState<'all' | Kind>('all');
-  const list = all.filter(x => f === 'all' || x.kind === f);
+  const [f, setF] = useState<'all' | Kind>('all'); const [hf, setHf] = useFlt();
+  const list = applyFlt(all.filter(x => f === 'all' || x.kind === f), hf, { text: x => `${typeof x.text === 'string' ? x.text : ''} ${x.by ?? ''} ${x.kind} ${x.tag?.label ?? ''}`, date: x => x.at });
   const first = all[all.length - 1];
   return <Card title="Full history" sub={`Everything at ${p.address} from ${first?.at.split(',')[0] ?? p.added} to today, with the date and time. Nothing is deleted. When a document is replaced, the earlier version stays here.`}
     action={<Btn sm kind="outline" icon={<Download size={14} />} onClick={() => { s.log(`Downloaded full history for ${p.address}`, 'Properties'); downloadPdf(s, `History · ${p.address}`); }}>Download history</Btn>}>
     <Tabs value={f} onChange={setF} items={[{ id: 'all' as const, label: 'All', count: all.length }, ...kinds.map(k => ({ id: k, label: k, count: all.filter(x => x.kind === k).length }))]} />
+    <FilterBar f={hf} set={setHf} placeholder="Search history" shown={list.length} total={all.length} />
     {list.length ? <div className="hlist">{list.map((x, i) => { const [ic, tone] = ICON[x.kind]; return <div key={i} className={`hrow${x.go ? ' click' : ''}`} onClick={x.go} role={x.go ? 'button' : undefined}>
       <span className={`tile ${tone}`} style={{ width: 32, height: 32 }}>{ic}</span>
       <div className="stack grow" style={{ gap: 3 }}><span className="htext">{x.text}</span><span className="caption">{x.at}{x.by ? ' · ' + x.by : ''} · {x.kind}</span></div>
@@ -65,7 +69,11 @@ export function PropertyHistory({ p }: { p: Property }) {
 
 /** Rent the tenant paid and what went on to the landlord, month by month. */
 export function PropertyMoney({ p }: { p: Property }) {
-  const s = useStore(); const L = useLookups();
+  if (isLeased(p)) return <LeasedMoney p={p} />;
+  return <ManagedMoney p={p} />;
+}
+function ManagedMoney({ p }: { p: Property }) {
+  const s = useStore(); const L = useLookups(); const [pf, setPf] = useFlt();
   const ll = L.landlord(p.owner); const plan = ll?.plan ?? 16;
   const tenants = s.tenants.filter(t => t.property === p.id && t.status !== 'Moved out');
   const rows = s.rent.filter(r => tenants.some(t => t.id === r.tenant));
@@ -77,7 +85,7 @@ export function PropertyMoney({ p }: { p: Property }) {
   const months = ['Aug 2026', 'Sep 2026', 'Oct 2026'].map(m => {
     if (m === 'Oct 2026') { const due = rows.reduce((a, r) => a + r.amount, 0), paid = rows.reduce((a, r) => a + r.paid, 0); return { m, due, paid, done: s.payouts[p.owner] === 'Paid', hold: s.payouts[p.owner] === 'On hold' }; }
     const t = started(m); const due = t.reduce((a, x) => a + x.rent, 0); return { m, due, paid: due, done: true, hold: false };
-  }).filter(x => x.due > 0).map(x => { const fee = Math.round(x.paid * plan / 100); const rep = repairsIn(x.m); return { ...x, fee, rep, out: Math.max(0, x.paid - fee - rep) }; });
+  }).filter(x => x.due > 0).map(x => { const fx = feeOf(x.paid, plan, s.vat); const fee = Math.round(fx.net); const vat = x.m === 'Oct 2026' ? fx.vat : 0; const rep = repairsIn(x.m); return { ...x, fee, vat, rep, out: Math.max(0, Math.round((x.paid - fee - vat - rep) * 100) / 100) }; });
   const now = months[months.length - 1];
   const payments = [
     ...rows.flatMap(r => r.history.map(h => ({ date: h.date, who: L.tenant(r.tenant)?.name ?? '', month: r.month, amount: h.amount, note: h.note }))),
@@ -94,18 +102,19 @@ export function PropertyMoney({ p }: { p: Property }) {
     {owing.length > 0 && <Note tone="warn">{owing.map(r => `${L.tenant(r.tenant)?.name} owes ${money(r.amount - r.paid)} for ${r.month}`).join(' · ')}. The landlord is paid what arrived; the rest carries forward.</Note>}
     <Card title="Month by month" sub={`What the tenant paid, the LSP fee, unpaid repair invoices taken off, and what was paid to ${ll?.name}.`}
       action={<Btn sm kind="outline" icon={<Send size={14} />} onClick={() => { s.log(`Sent October statement for ${p.address} to ${ll?.name}`, 'Rent & Invoices'); s.toast(`Statement sent to ${ll?.email}`); }}>Send statement</Btn>}>
-      <div className="tablewrap"><table className="t"><thead><tr><th>Month</th><th>Rent due</th><th>Tenant paid</th><th>LSP fee ({plan}%)</th><th>Repairs taken off</th><th>Paid to landlord</th><th>Status</th></tr></thead><tbody>
-        {[...months].reverse().map(x => <tr key={x.m} className="static"><td><b className="strong">{x.m}</b></td><td>{money(x.due)}</td><td>{money(x.paid)}{x.paid < x.due && <div className="caption" style={{ color: 'var(--warn)' }}>{money(x.due - x.paid)} owed</div>}</td><td>−{money(x.fee)}</td><td>{x.rep ? '−' + money(x.rep) : '—'}</td><td><b>{money(x.out)}</b></td>
+      <div className="tablewrap"><table className="t"><thead><tr><th>Month</th><th>Rent due</th><th>Tenant paid</th><th>LSP fee ({plan}%)</th><th>VAT on fee</th><th>Repairs taken off</th><th>Paid to landlord</th><th>Status</th></tr></thead><tbody>
+        {[...months].reverse().map(x => <tr key={x.m} className="static"><td><b className="strong">{x.m}</b></td><td>{money(x.due)}</td><td>{money(x.paid)}{x.paid < x.due && <div className="caption" style={{ color: 'var(--warn)' }}>{money(x.due - x.paid)} owed</div>}</td><td>−{money(x.fee)}</td><td>{x.vat ? '−' + money(x.vat) : <span className="muted">{s.vat.status === 'On' ? '—' : 'Off'}</span>}</td><td>{x.rep ? '−' + money(x.rep) : '—'}</td><td><b>{money(x.out)}</b></td>
           <td><Chip tone={x.done ? 'ok' : x.hold ? 'warn' : 'info'}>{x.done ? 'Paid to landlord' : x.hold ? 'On hold' : 'Due 20 Oct'}</Chip></td></tr>)}
       </tbody></table></div>
     </Card>
     <div className="grid g2">
       <Card title="What the tenant paid" sub="Every payment that arrived in the bank, with the date." action={rows[0] && <Btn sm kind="ghost" icon={<Eye size={14} />} onClick={() => s.go('rent', rows[0].id)}>Rent account</Btn>}>
-        {payments.length ? <div className="divlist">{payments.map((x, i) => <div key={i} className="item"><span className="tile t-ok" style={{ width: 32, height: 32 }}><PoundSterling size={15} /></span><div className="stack grow"><b>{money(x.amount)} · {x.who}</b><span className="caption">{x.date} · for {x.month} · {x.note}</span></div></div>)}</div> : <Empty icon={<PoundSterling size={22} />}>No payments yet.</Empty>}
+        <FilterBar f={pf} set={setPf} search={false} />
+        {payments.length ? <div className="divlist">{applyFlt(payments, pf, { text: x => x.who, date: x => x.date }).map((x, i) => <div key={i} className="item"><span className="tile t-ok" style={{ width: 32, height: 32 }}><PoundSterling size={15} /></span><div className="stack grow"><b>{money(x.amount)} · {x.who}</b><span className="caption">{x.date} · for {x.month} · {x.note}</span></div></div>)}</div> : <Empty icon={<PoundSterling size={22} />}>No payments yet.</Empty>}
         {rows.map(r => <div key={r.id} className="flex between" style={{ marginTop: 4 }}><span className="small">{L.tenant(r.tenant)?.name} · {r.month}</span><Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip></div>)}
       </Card>
       <Card title="Paid to the landlord" sub={`${ll?.name} · ${ll?.bank}`}>
-        <div className="divlist">{[...months].reverse().map(x => <div key={x.m} className="item"><span className={`tile ${x.done ? 't-ok' : 't-info'}`} style={{ width: 32, height: 32 }}><Landmark size={15} /></span><div className="stack grow"><b>{money(x.out)} · {x.m}</b><span className="caption">{money(x.paid)} rent − {money(x.fee)} fee{x.rep ? ` − ${money(x.rep)} repairs` : ''}</span></div><Chip tone={x.done ? 'ok' : x.hold ? 'warn' : 'info'}>{x.done ? 'Paid' : x.hold ? 'On hold' : 'Scheduled'}</Chip></div>)}</div>
+        <div className="divlist">{[...months].reverse().map(x => <div key={x.m} className="item"><span className={`tile ${x.done ? 't-ok' : 't-info'}`} style={{ width: 32, height: 32 }}><Landmark size={15} /></span><div className="stack grow"><b>{money(x.out)} · {x.m}</b><span className="caption">{money(x.paid)} rent − {money(x.fee)} fee{x.vat ? ` − ${money(x.vat)} VAT` : ''}{x.rep ? ` − ${money(x.rep)} repairs` : ''}</span></div><Chip tone={x.done ? 'ok' : x.hold ? 'warn' : 'info'}>{x.done ? 'Paid' : x.hold ? 'On hold' : 'Scheduled'}</Chip></div>)}</div>
       </Card>
     </div>
     <Card title="Invoices for this home" sub="Repair invoices to the landlord. Click one to see it in the LSP template."><InvoiceTable list={invs} /></Card>
@@ -117,4 +126,32 @@ export function ClientHomeInvoices({ p }: { p: Property }) {
   const jids = s.jobs.filter(j => j.property === p.id).map(j => j.id);
   const invs = s.invoices.filter(i => (i.job && jids.includes(i.job)) || i.site === p.address || i.items.some(x => x.desc.includes(p.address)));
   return <Card title="Invoices for this home" sub="Sent to the client. Click one to see it in the LSP template." action={<Receipt size={18} color="var(--text-brand)" />}><InvoiceTable list={invs} /></Card>;
+}
+
+/** Rent & invoices for a home leased by LSP: occupier rent in, lease rent out to the owner. No management fee. */
+function LeasedMoney({ p }: { p: Property }) {
+  const s = useStore(); const L = useLookups(); const ls = p.lease!; const [pay, setPay] = useState<string | null>(null);
+  const tenants = s.tenants.filter(t => t.property === p.id && t.status !== 'Moved out');
+  const rows = s.rent.filter(r => tenants.some(t => t.id === r.tenant));
+  const out = s.leasePays.filter(x => x.property === p.id);
+  const occ = tenants.reduce((a, t) => a + t.rent, 0) || p.rent;
+  const inOct = rows.reduce((a, r) => a + r.paid, 0); const owedOwner = out.reduce((a, x) => a + x.amount - x.paid, 0);
+  const jids = s.jobs.filter(j => j.property === p.id).map(j => j.id);
+  const invs = s.invoices.filter(i => (i.job && jids.includes(i.job)) || i.site === p.address);
+  const x = pay ? out.find(r => r.id === pay) : undefined;
+  return <>
+    <div className="grid g4">
+      <Stat label="Occupier rent per month" value={money(occ)} sub={`paid to ${LSP_NAME}`} />
+      <Stat label="Tenant paid · Oct" value={money(inOct)} tone={inOct >= occ ? 'ok' : 'warn'} sub={inOct >= occ ? 'Paid in full' : `${money(occ - inOct)} still owed`} />
+      <Stat label="Lease rent to owner" value={money(ls.rent)} sub={`${L.landlord(p.owner)?.name} · ${ls.frequency.toLowerCase()}`} />
+      <Stat label="Owed to owner" value={money(owedOwner)} tone={owedOwner ? 'warn' : 'ok'} sub="does not depend on the tenant" />
+    </div>
+    <Note>Leased by LSP. Management fee: not applicable. Money in and money out are kept separate: {money(occ)} rent in − {money(ls.rent)} lease out = {money(occ - ls.rent)} before maintenance and other costs (amounts due).</Note>
+    <div className="grid g2">
+      <Card title="Rent from the occupiers" sub="Received by LSP, as the landlord.">{rows.length ? <div className="divlist">{rows.map(r => <div key={r.id} className="item"><span className="tile t-ok" style={{ width: 32, height: 32 }}><PoundSterling size={15} /></span><div className="stack grow"><b>{L.tenant(r.tenant)?.name} · {r.month}</b><span className="caption">{money(r.paid)} of {money(r.amount)}{r.history[0] ? ' · ' + r.history[0].date : ''}</span></div><Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip></div>)}</div> : <Empty icon={<PoundSterling size={22} />}>No rent yet.</Empty>}</Card>
+      <Card title="Lease rent to the owner" sub="Paid by LSP on its own schedule."><OwnerPayTable list={out} onPay={setPay} hideHome /></Card>
+    </div>
+    <Card title="Invoices for this home" sub="Repair invoices for this home."><InvoiceTable list={invs} /></Card>
+    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={x.amount - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, p.address); setPay(null); }} />}
+  </>;
 }

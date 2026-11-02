@@ -4,6 +4,7 @@ import { useStore, useLookups, money, staff, type Lookups, type Route } from '..
 import { INSP_KINDS, PLAN, nowStamp, type InspKind, type InspScope, type Job, type JobEvent, type Line, type Plan, type Property } from '../data';
 import { ME, ME_NAME, SUPERVISOR } from '../data';
 import { Btn, Chip, Field, Modal, Note, Select, Text, Area, Avatar, PhotoPicker, dateLabel } from '../ui';
+import { yearlyBudget, MAINT_SHARE, LSP_NAME, vatActive } from '../pricing';
 
 type S = ReturnType<typeof useStore>;
 
@@ -110,7 +111,7 @@ export function NewLandlordModal({ onClose, prefill, onCreated, from, skipProper
       <Field label="Office Admin in charge"><Select value={f.admin} onChange={v => setF({ ...f, admin: v })} options={L.admins.map(a => ({ value: a.id, label: a.name }))} /></Field>
       <div style={{ gridColumn: '1/-1' }}><Field label="Billing address"><Text value={f.billing} onChange={v => setF({ ...f, billing: v })} placeholder="House, street, town, postcode" /></Field></div>
     </div>}
-    {step === 2 && <><div className="grid g4">{([10, 12, 16, 20] as Plan[]).map(p => <button key={p} className={`choice${plan === p ? ' on' : ''}`} onClick={() => setPlan(p)}><b style={{ fontSize: 20 }}>{p}%</b><span className="small">{p === 10 ? 'Management Only' : `Job limit ${money(PLAN[p].limit)}`}</span><span className="caption">{p === 10 ? 'No repairs included. Every repair needs the landlord’s OK.' : 'Repairs above this come to you to approve.'}</span></button>)}</div>
+    {step === 2 && <><div className="grid g4">{([10, 12, 16, 20] as Plan[]).map(p => <button key={p} className={`choice${plan === p ? ' on' : ''}`} onClick={() => setPlan(p)}><b style={{ fontSize: 20 }}>{p}%</b><span className="caption" style={{ fontWeight: 700 }}>{vatActive(s.vat) ? `${+(p * (1 + s.vat.rate / 100)).toFixed(2)}% incl. VAT` : 'No VAT charged'}</span><span className="small">{p === 10 ? 'Management Only' : `Job limit ${money(PLAN[p].limit)}`}</span><span className="caption">{p === 10 ? 'No repairs included. Every repair needs the landlord’s OK.' : 'Repairs above this come to you to approve.'}</span></button>)}</div>
       <Field label="Agreement start date"><input className="input" type="date" value={start} onChange={e => setStart(e.target.value)} /></Field></>}
     {step === 3 && skipProperty && <Note>The property is added when the takeover is confirmed in Planned Switch, so it isn't counted as managed before then. Click "Skip for now".</Note>}
     {step === 3 && !skipProperty && <div className="row" style={{ gap: 16, alignItems: 'stretch' }}>
@@ -130,28 +131,57 @@ export function NewLandlordModal({ onClose, prefill, onCreated, from, skipProper
   </Modal>;
 }
 
-export function AddPropertyModal({ owner, managed, onClose }: { owner: string; managed: boolean; onClose: () => void }) {
+export function AddPropertyModal({ owner, managed, leased: startLeased = false, onClose }: { owner: string; managed: boolean; leased?: boolean; onClose: () => void }) {
   const s = useStore(); const L = useLookups();
-  const [f, setF] = useState({ address: '', area: '', type: 'House' as Property['type'], beds: '3', rooms: '5', rent: '', admin: ME, budget: '1200', photo: '' });
-  const ok = f.address && f.area && (!managed || f.rent);
-  return <Modal wide title={managed ? `Add a property for ${L.landlord(owner)?.name ?? 'the landlord'}` : `Add a home for ${L.client(owner)?.name ?? 'the client'}`} sub={managed ? 'Saved as Managed. Each property has its own yearly repair budget. Shared houses (HMO) list each room.' : 'Unmanaged: contractor services only. No tenants, rent or safety plan.'} onClose={onClose}
+  const [f, setF] = useState({ address: '', area: '', type: 'House' as Property['type'], beds: '3', rooms: '5', rent: '', admin: ME, photo: '', arr: startLeased ? 'Leased' : 'Managed',
+    leaseRent: '', freq: 'Monthly', firstDue: '2026-11-01', start: '2026-11-01', end: '2029-10-31', breakDate: '2028-11-01', review: '2027-11-01', notice: '3 months in writing',
+    ownerDoes: 'Building insurance, roof and structure', lspDoes: 'Day-to-day repairs, safety checks, inspections, finding tenants', budget: '1000', bFrom: '2026-11-01', bTo: '2027-10-31', doc: '' });
+  const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch });
+  const leased = managed && f.arr === 'Leased';
+  const ll = L.landlord(owner); const plan = ll?.plan ?? 16;
+  const auto = yearlyBudget(+f.rent || 0, plan);
+  const ok = f.address && f.area && (!managed || f.rent) && (!leased || (+f.leaseRent > 0 && f.start && f.end && f.firstDue && f.budget !== '' && f.bFrom && f.bTo));
+  return <Modal wide title={!managed ? `Add a home for ${L.client(owner)?.name ?? 'the client'}` : leased ? `Add a home leased by LSP from ${ll?.name ?? 'the owner'}` : `Add a property for ${ll?.name ?? 'the landlord'}`}
+    sub={!managed ? 'Unmanaged: contractor services only, with a quote and then an invoice.' : leased ? 'LSP becomes the landlord to the occupiers. The owner is shown under Lease From. No management fee applies.' : 'Managed for the owner. The maintenance budget is worked out from the plan fee.'} onClose={onClose}
     footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn icon={<Home size={16} />} disabled={!ok} onClick={() => {
       const id = 'P' + Date.now() % 10000;
-      s.setProperties(ps => [{ id, address: f.address, area: f.area, type: f.type, beds: +f.beds, rooms: f.type === 'HMO' ? +f.rooms : undefined, baths: 1, managed, owner, rent: managed ? +f.rent || 0 : 0, status: managed ? 'Vacant' : 'Let', admin: f.admin, photo: f.photo || 'images/home1.jpg', budget: managed ? +f.budget || 0 : 0, used: 0, gas: true, added: '15 Oct 2026' }, ...ps]);
-      s.log(`Added ${managed ? 'managed' : 'unmanaged'} property ${f.address}`, 'Properties'); s.toast('Property added'); onClose(); s.go('properties', id);
+      s.setProperties(ps => [{ id, address: f.address, area: f.area, type: f.type, beds: +f.beds, rooms: f.type === 'HMO' ? +f.rooms : undefined, baths: 1, managed, owner, rent: managed ? +f.rent || 0 : 0, status: managed ? 'Vacant' : 'Let', admin: f.admin, photo: f.photo || 'images/home1.jpg', budget: leased ? +f.budget || 0 : managed ? auto : 0, used: 0, gas: true, added: '15 Oct 2026',
+        ...(managed ? { arrangement: leased ? 'Leased' as const : 'Managed' as const } : {}),
+        ...(leased ? { lease: { ref: 'LSP-LEASE-' + String(id).slice(1).padStart(4, '0'), start: dateLabel(f.start), end: dateLabel(f.end), review: dateLabel(f.review) || '—', breakDate: dateLabel(f.breakDate) || '—', notice: f.notice, rent: +f.leaseRent, frequency: f.freq as 'Monthly' | 'Quarterly', firstDue: dateLabel(f.firstDue), dueDay: new Date(f.firstDue).getDate(), doc: f.doc || undefined, use: 'Residential letting to tenants', sublet: 'Allowed, on assured shorthold tenancies', ownerDoes: f.ownerDoes, lspDoes: f.lspDoes, budget: +f.budget || 0, budgetFrom: dateLabel(f.bFrom), budgetTo: dateLabel(f.bTo), payTo: ll?.bank ?? '—', activated: nowStamp(), by: ME_NAME } } : {}) }, ...ps]);
+      if (leased) { const first = new Date(f.firstDue); const step = f.freq === 'Quarterly' ? 3 : 1; s.setLeasePays(xs => [...xs, ...[0, 1, 2].map(i => { const d = new Date(first.getFullYear(), first.getMonth() + i * step, first.getDate()); const lab = dateLabel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); return { id: `LP${id}-${i}`, property: id, month: lab.split(' ').slice(1).join(' '), due: lab, amount: +f.leaseRent, paid: 0, history: [] }; })]); }
+      s.log(leased ? `Added ${f.address}, leased by LSP from ${ll?.name} at ${money(+f.leaseRent)} ${f.freq.toLowerCase()} from ${dateLabel(f.start)}` : `Added ${managed ? 'managed' : 'unmanaged'} property ${f.address}`, 'Properties'); s.toast(leased ? 'Leased home added. Owner payments scheduled.' : 'Property added'); onClose(); s.go('properties', id);
     }}>Add property</Btn></>}>
+    {managed && <div className="stack" style={{ gap: 6 }}><span className="caption" style={{ fontWeight: 700 }}>Operating arrangement</span><div className="seg2">{(['Managed', 'Leased'] as const).map(x => <button key={x} type="button" className={f.arr === x ? 'on' : ''} onClick={() => set({ arr: x })}>{x === 'Managed' ? 'Managed for owner' : 'Leased by LSP'}</button>)}</div></div>}
     <div className="row" style={{ gap: 16, alignItems: 'stretch' }}>
-      <div style={{ width: 240, flex: 'none' }}><PhotoPicker value={f.photo} onChange={v => setF({ ...f, photo: v })} /></div>
+      <div style={{ width: 240, flex: 'none' }}><PhotoPicker value={f.photo} onChange={v => set({ photo: v })} /></div>
       <div className="grid g2 grow" style={{ gap: 12 }}>
-        <Field label="Address"><Text value={f.address} onChange={v => setF({ ...f, address: v })} placeholder="12 Oak Street" /></Field>
-        <Field label="Town and postcode"><Text value={f.area} onChange={v => setF({ ...f, area: v })} placeholder="London N1" /></Field>
-        <Field label="Type"><Select value={f.type} onChange={v => setF({ ...f, type: v as Property['type'] })} options={['House', 'Flat', 'HMO'].map(x => ({ value: x, label: x === 'HMO' ? 'Shared house (HMO)' : x }))} /></Field>
-        {f.type === 'HMO' ? <Field label="Rooms to let"><Text value={f.rooms} onChange={v => setF({ ...f, rooms: v })} /></Field> : <Field label="Bedrooms"><Text value={f.beds} onChange={v => setF({ ...f, beds: v })} /></Field>}
-        {managed && <Field label="Monthly rent (£)"><Text value={f.rent} onChange={v => setF({ ...f, rent: v })} placeholder="1150" /></Field>}
-        {managed && <Field label="Yearly repair budget (£)"><Text value={f.budget} onChange={v => setF({ ...f, budget: v })} /></Field>}
-        <Field label="Office Admin"><Select value={f.admin} onChange={v => setF({ ...f, admin: v })} options={L.admins.map(a => ({ value: a.id, label: a.name }))} /></Field>
+        <Field label="Address"><Text value={f.address} onChange={v => set({ address: v })} placeholder="12 Oak Street" /></Field>
+        <Field label="Town and postcode"><Text value={f.area} onChange={v => set({ area: v })} placeholder="London N1" /></Field>
+        <Field label="Type"><Select value={f.type} onChange={v => set({ type: v as Property['type'] })} options={['House', 'Flat', 'HMO'].map(x => ({ value: x, label: x === 'HMO' ? 'Shared house (HMO)' : x }))} /></Field>
+        {f.type === 'HMO' ? <Field label="Rooms to let"><Text value={f.rooms} onChange={v => set({ rooms: v })} /></Field> : <Field label="Bedrooms"><Text value={f.beds} onChange={v => set({ beds: v })} /></Field>}
+        {managed && <Field label={leased ? 'Occupier rent per month (£)' : 'Monthly rent (£)'}><Text value={f.rent} onChange={v => set({ rent: v })} placeholder="1150" /></Field>}
+        <Field label="Office Admin"><Select value={f.admin} onChange={v => set({ admin: v })} options={L.admins.map(a => ({ value: a.id, label: a.name }))} /></Field>
       </div>
     </div>
+    {managed && !leased && <Note tone="ok">Maintenance budget: {MAINT_SHARE}% of the {plan}% fee before VAT{+f.rent ? ` = ${money(auto)} a year` : ''}. It is worked out automatically and only staff see it.</Note>}
+    {leased && <>
+      <div className="lsec"><b>Lease from {ll?.name}</b><span className="caption">The owner keeps the property. LSP pays this lease rent whether the home is let or empty.</span></div>
+      <div className="grid g3" style={{ gap: 12 }}>
+        <Field label="Lease rent to the owner (£)"><Text value={f.leaseRent} onChange={v => set({ leaseRent: v })} placeholder="1200" /></Field>
+        <Field label="How often"><Select value={f.freq} onChange={v => set({ freq: v })} options={['Monthly', 'Quarterly'].map(x => ({ value: x, label: x }))} /></Field>
+        <Field label="First payment due"><input className="input" type="date" value={f.firstDue} onChange={e => set({ firstDue: e.target.value })} /></Field>
+        <Field label="Lease starts"><input className="input" type="date" value={f.start} onChange={e => set({ start: e.target.value })} /></Field>
+        <Field label="Lease ends"><input className="input" type="date" value={f.end} onChange={e => set({ end: e.target.value })} /></Field>
+        <Field label="Break date"><input className="input" type="date" value={f.breakDate} onChange={e => set({ breakDate: e.target.value })} /></Field>
+        <Field label="Rent review"><input className="input" type="date" value={f.review} onChange={e => set({ review: e.target.value })} /></Field>
+        <Field label="Notice"><Text value={f.notice} onChange={v => set({ notice: v })} /></Field>
+        <Field label="Signed lease (PDF)"><input className="input" type="file" accept=".pdf" aria-label="Signed lease" onChange={e => set({ doc: e.target.files?.[0]?.name ?? '' })} /></Field>
+      </div>
+      <div className="grid g2" style={{ gap: 12 }}><Field label="Owner is responsible for"><Text value={f.ownerDoes} onChange={v => set({ ownerDoes: v })} /></Field><Field label="LSP is responsible for"><Text value={f.lspDoes} onChange={v => set({ lspDoes: v })} /></Field></div>
+      <div className="lsec"><b>Maintenance budget</b><span className="caption">There is no LSP fee on a leased home, so set the budget agreed for this lease. Repairs come off it; when it runs out they go to the Supervisor to review.</span></div>
+      <div className="grid g3" style={{ gap: 12 }}><Field label="Budget (£)"><Text value={f.budget} onChange={v => set({ budget: v })} /></Field><Field label="From"><input className="input" type="date" value={f.bFrom} onChange={e => set({ bFrom: e.target.value })} /></Field><Field label="To"><input className="input" type="date" value={f.bTo} onChange={e => set({ bTo: e.target.value })} /></Field></div>
+      <Note>Management fee: <b>Not applicable · leased by {LSP_NAME}</b>. The management plan still sets the services, inspections and job limits.</Note>
+    </>}
   </Modal>;
 }
 

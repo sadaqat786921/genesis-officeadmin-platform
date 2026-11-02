@@ -4,7 +4,7 @@ import { useStore, useLookups, money } from '../store';
 import { daysFrom, type Contractor } from '../data';
 import { SUPERVISOR } from '../data';
 import { sendRequest } from './Requests';
-import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, DocRow, Field, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Reason, Stat, Tabs, Text, Timeline, UploadModal, Empty } from '../ui';
+import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, DocRow, Field, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Reason, Stat, Tabs, Text, Timeline, UploadModal, Empty , FilterBar, applyFlt, useFlt, yearsOf } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { DONE_JOB } from './shared';
 import { InspTable, JobTable } from './tables';
@@ -60,7 +60,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
 type CTab = 'overview' | 'kyc' | 'jobs' | 'bills' | 'history';
 function ContractorPage({ id }: { id: string }) {
   const s = useStore(); const L = useLookups(); const c = s.contractors.find(x => x.id === id)!;
-  const [tab, setTab] = useState<CTab>('overview'); const [m, setM] = useState<'' | 'pause' | 'remove' | 'resume' | `up${number}`>('');
+  const [tab, setTab] = useState<CTab>('overview'); const [df, setDf] = useFlt(); const [m, setM] = useState<'' | 'pause' | 'remove' | 'resume' | `up${number}`>('');
   const jobs = s.jobs.filter(j => j.contractor === id); const open = jobs.filter(j => !DONE_JOB.includes(j.status));
   const insp = s.inspections.filter(i => i.inspector === id);
   const unpaid = c.bills.filter(b => b.status === 'Unpaid');
@@ -89,7 +89,8 @@ function ContractorPage({ id }: { id: string }) {
       </div>
     </div>}
     {tab === 'kyc' && <Card title="KYC and documents" sub="Photo ID, right to work, insurance and trade certificates. Replace any document when it is renewed.">
-      {c.kyc.map((d, i) => <DocRow key={d.name} name={d.name} status={d.status} meta={`${d.file ?? 'No file'}${d.expires && d.expires !== '—' ? ' · ends ' + d.expires : ''}`}>
+      {c.kyc.length > 2 && <FilterBar f={df} set={setDf} placeholder="Search documents" types={[...new Set(c.kyc.map(d => d.status))]} typeLabel="Any status" mode="year" years={yearsOf(c.kyc, d => d.at ?? (d.expires !== '—' ? d.expires : undefined))} />}
+      {c.kyc.map((d, i) => ({ d, i })).filter(({ d }) => applyFlt([d], df, { text: x => `${x.name} ${x.file ?? ''}`, type: x => x.status, date: x => x.at ?? (x.expires !== '—' ? x.expires : undefined) }).length).map(({ d, i }) => <DocRow key={d.name} name={d.name} status={d.status} meta={`${d.file ?? 'No file'}${d.expires && d.expires !== '—' ? ' · ends ' + d.expires : ''}`}>
         {d.file && <Btn sm kind="ghost" icon={<Eye size={14} />} onClick={() => s.toast('Opening ' + d.file)}>View</Btn>}
         {d.status === 'Uploaded' && <Btn sm kind="success" icon={<Check size={14} />} onClick={() => upd({ kyc: c.kyc.map((z, k) => k === i ? { ...z, status: 'Verified' } : z) }, `Verified ${d.name} for ${c.name}`)}>Verify</Btn>}
         <Btn sm kind="ghost" icon={<Upload size={14} />} onClick={() => setM(`up${i}`)}>Replace</Btn></DocRow>)}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Home, PoundSterling, Wrench, ShieldCheck, KeyRound, ClipboardCheck, ArrowRight, Check, CircleCheck, Menu, X, Star, LineChart, Send, Plus, Minus, Bell, ChevronRight, CalendarDays, FileText, Sparkles, Users, Building2 } from 'lucide-react';
 import { useStore } from '../store';
+import { vatActive } from '../pricing';
 import { nowStamp, type Lead } from '../data';
 import { leadFromWebsite, AREAS } from './Switch';
 
@@ -158,6 +159,7 @@ function PlannedSwitch() {
 }
 
 export default function Landing() {
+  const s = useStore();
   const [wl, setWl] = useState(false);
   const [menu, setMenu] = useState(false); const [scrolled, setScrolled] = useState(false); const [open, setOpen] = useState<number[]>([0, 1, 2, 3]);
   const [f, setF] = useState({ name: '', email: '', phone: '', who: 'Landlord', homes: '1', msg: '' }); const [sent, setSent] = useState(false);
@@ -213,7 +215,7 @@ export default function Landing() {
         <div className="lp-plans four">{PLANS.map(pl => <div key={pl.p} className={`lp-plan${pl.top ? ' top' : ''}`}>
           {pl.top && <span className="lp-badge"><Star size={12} fill="currentColor" />Most chosen</span>}
           <span className="lp-plan-name">{pl.t}</span>
-          <div className="lp-price"><b>{pl.p}%</b><span>of monthly rent</span></div>
+          <div className="lp-price"><b>{vatActive(s.vat) ? +(pl.p * (1 + s.vat.rate / 100)).toFixed(2) : pl.p}%</b><span>{vatActive(s.vat) ? `of monthly rent, including VAT · fee ${pl.p}% + VAT ${s.vat.rate}%` : 'of monthly rent'}</span></div>
           <p>{pl.d}</p>
           <div className="lp-limit"><Wrench size={15} />{pl.limit ? <>Repair limit <b>£{pl.limit}</b> Per Job</> : <>No repairs included</>}</div>
           <ul>{pl.f.map(x => <li key={x}><Check size={16} />{x}</li>)}</ul>

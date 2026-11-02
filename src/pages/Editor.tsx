@@ -5,6 +5,7 @@ import { ME, ME_NAME, PORTAL, nowStamp, parseDate, fmtDate, type Job, type Line,
 import { Btn, Card, Chip, Field, Modal, Note, Select, Text, Area } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { COMPANY, DocSheet } from './docs';
+import { vatActive } from '../pricing';
 import { jobEvent, jobLines, nextInvoiceNo } from './shared';
 
 /* Full-page quote and invoice editor (like the client's accounting tool, in the LSP design).
@@ -60,6 +61,7 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
   const sub = r2(used.reduce((a, r) => a + r.qty * r.rate, 0));
   const discAmt = r2(+disc > 0 ? (discMode === '%' ? sub * +disc / 100 : +disc) : 0);
   const total = r2(sub - discAmt);
+  const va = vatActive(s.vat); const vatAmt = va ? r2(total * s.vat.rate / 100) : 0; const gross = r2(total + vatAmt);
   const lines: Line[] = [...used.map(({ key: _k, ...l }) => ({ ...l, activity: l.activity || l.desc })), ...(discAmt ? [{ code: 'DISCOUNT', activity: 'Discount', desc: discMode === '%' ? `${disc}% discount` : 'Discount', qty: 1, rate: -discAmt }] : [])];
   const costN = +cost || Math.round(total * .7);
   const siteLabel = site === 'other' ? siteText : (() => { const p = L.prop(site); return p ? `${p.address}, ${p.area}` : ''; })();
@@ -81,22 +83,22 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
       const title2 = used[0]?.activity || used[0]?.desc || 'Quoted work';
       s.setJobs(js => [{ id: id!, title: title2, property: p?.id ?? homes[0]?.id ?? '', managed: false, reported: at, by: `Client · ${c?.name}`, admin: p?.admin ?? ME, category: 'General', comms: comm, events: [{ at, by: ME_NAME, text: `Quote ${no} created for ${c?.name}` }, ...(send ? [{ at, by: ME_NAME, text: `Quote ${no} sent: ${money(total)}` }] : [])], status: 'New', ...patch } as Job, ...js]);
     }
-    s.log(send ? `Sent quote ${no} (${money(total)}) to ${c?.name}` : `Saved quote ${no} as a draft for ${c?.name}`, 'Clients');
+    s.log(send ? `Sent quote ${no} (${money(gross)}) to ${c?.name}` : `Saved quote ${no} as a draft for ${c?.name}`, 'Clients');
     s.toast(send ? `Quote ${no} sent to ${mail?.to}` : `Quote ${no} saved as a draft`);
     s.go('clients', id);
   };
   const saveInvoice = (send: boolean, mail?: { to: string; subject: string; body: string }) => {
     if (!send) { if (job) { jobEvent(s, job.id, 'Invoice draft saved', { lines }, ME_NAME); s.toast('Invoice draft saved'); back(); } return; }
-    const inv: Invoice = { id: no, to: cust, toKind: c!.kind, job: job?.id, amount: total, paid: 0, terms: terms === 'Due on receipt' ? 'Straight away' : terms.replace('Net ', '') + ' days', issued: fromInput(date), due, overdue: false, site: siteLabel, note, memo, attachments: files.map(f => f.name), billTo, items: lines.map(l => ({ code: l.code, activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: r2(l.qty * l.rate) })) };
+    const inv: Invoice = { id: no, to: cust, toKind: c!.kind, job: job?.id, amount: gross, vat: vatAmt || undefined, vatRate: va ? s.vat.rate : undefined, vatNo: va ? s.vat.number : undefined, paid: 0, terms: terms === 'Due on receipt' ? 'Straight away' : terms.replace('Net ', '') + ' days', issued: fromInput(date), due, overdue: false, site: siteLabel, note, memo, attachments: files.map(f => f.name), billTo, items: lines.map(l => ({ code: l.code, activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: r2(l.qty * l.rate) })) };
     s.setInvoices(is => [inv, ...is]);
     if (job) jobEvent(s, job.id, `Invoice ${no} sent to ${c?.name}`, { status: 'Invoiced', invoice: no, lines, comms: [...job.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: mail?.subject, text: `Invoice ${no} for ${money(total)} sent with the PDF attached.` }] }, ME_NAME);
-    s.log(`Sent invoice ${no} (${money(total)}) to ${c?.name}`, 'Rent & Invoices'); s.toast(`Invoice ${no} sent to ${mail?.to}`);
+    s.log(`Sent invoice ${no} (${money(gross)}) to ${c?.name}`, 'Rent & Invoices'); s.toast(`Invoice ${no} sent to ${mail?.to}`);
     back();
   };
 
   const paper = <DocSheet kind={isQuote ? 'QUOTE' : 'INVOICE'} to={{ label: isQuote ? 'Quote for' : 'Invoice to', rows: billTo.split('\n') }}
     meta={isQuote ? [['Quote', no], ['Date', ddmm(fromInput(date))], ['Valid until', ddmm(fromInput(expiry))]] : [['Invoice', no.replace('INV-', '')], ['Date', ddmm(fromInput(date))], ['Terms', terms], ['Due date', ddmm(due)]]}
-    site={siteLabel} lines={lines} foot={discAmt ? [['Subtotal', '£' + num(sub)], ['Discount', '−£' + num(discAmt)], [isQuote ? 'Quote total' : 'Balance due', '£' + num(total)]] : [[isQuote ? 'Quote total' : 'Balance due', '£' + num(total)]]}>
+    site={siteLabel} lines={lines} vatNo={va ? s.vat.number : undefined} foot={[...(discAmt || va ? [['Subtotal', '£' + num(sub)]] as [string, string][] : []), ...(discAmt ? [['Discount', '−£' + num(discAmt)]] as [string, string][] : []), ...(va ? [[`VAT ${s.vat.rate}%`, '£' + num(vatAmt)]] as [string, string][] : []), [isQuote ? 'Quote total' : 'Balance due', '£' + num(gross)]]}>
     {note && <p className="doc-note">{note}</p>}{!isQuote && pay && <p className="doc-note" style={{ whiteSpace: 'pre-line' }}>{pay}</p>}
   </DocSheet>;
 
@@ -159,7 +161,8 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
           <div className="etotals">
             <div><span>Subtotal</span><b>{money(sub)}</b></div>
             <div><span>Discount</span><span className="flex" style={{ gap: 6 }}><span className="eseg">{(['%', '£'] as const).map(x => <button key={x} className={discMode === x ? 'on' : ''} onClick={() => setDiscMode(x)}>{x}</button>)}</span><input aria-label="Discount" value={disc} onChange={e => setDisc(e.target.value)} placeholder="0" /></span><b>{discAmt ? '−' + money(discAmt) : money(0)}</b></div>
-            <div className="big"><span>{isQuote ? 'Quote total' : 'Balance due'}</span><b>{money(total)}</b></div>
+            {va ? <div><span>VAT {s.vat.rate}%</span><b>{money(vatAmt)}</b></div> : <div><span>VAT</span><span className="caption">Off · LSP is not VAT registered</span></div>}
+            <div className="big"><span>{isQuote ? 'Quote total' : 'Balance due'}</span><b>{money(gross)}</b></div>
           </div>
           {isQuote && <Card className="flat" title="Staff only" sub="Not on the quote.">
             <Field label="Contractor"><Select value={con} onChange={setCon} options={s.contractors.filter(x => x.type === 'Trade').map(x => ({ value: x.id, label: `${x.name} · ${x.trade}${x.status !== 'Active' ? ' (paused)' : ''}`, disabled: x.status !== 'Active' }))} /></Field>
@@ -177,7 +180,7 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
       <Btn icon={<Send size={16} />} disabled={!ok} onClick={() => setM('send')}>Save and send</Btn>
     </div>
     {m === 'preview' && <Modal wide title={`Preview · ${isQuote ? 'Quote' : 'Invoice'} ${no}`} sub="This is the PDF the customer receives." onClose={() => setM('')} footer={<><Btn kind="outline" onClick={() => setM('')}>Back to edit</Btn><Btn icon={<Send size={16} />} disabled={!ok} onClick={() => setM('send')}>Save and send</Btn></>}>{paper}</Modal>}
-    {m === 'send' && <SendEmail kind={kind} no={no} to={email} cc={cc} name={c?.contact ?? c?.name ?? ''} total={total} expiry={fromInput(expiry)} due={due} files={files.filter(f => f.send).map(f => f.name)} onClose={() => setM('')} onSend={mail => { setM(''); isQuote ? saveQuote(true, mail) : saveInvoice(true, mail); }} />}
+    {m === 'send' && <SendEmail kind={kind} no={no} to={email} cc={cc} name={c?.contact ?? c?.name ?? ''} total={gross} expiry={fromInput(expiry)} due={due} files={files.filter(f => f.send).map(f => f.name)} onClose={() => setM('')} onSend={mail => { setM(''); isQuote ? saveQuote(true, mail) : saveInvoice(true, mail); }} />}
     {typeof m === 'object' && <AddProduct code={m.add} onClose={() => setM('')} onSave={p => { s.setCatalogue(cs => [...cs, p]); if (m.row) pick(m.row, p); s.log(`Saved new product or service ${p.code} (${p.name})`, 'Products'); s.toast(`${p.code} saved. Next time it fills in by itself.`); setM(''); }} />}
   </>;
 }

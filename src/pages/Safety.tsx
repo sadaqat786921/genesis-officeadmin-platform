@@ -37,7 +37,7 @@ function Centre() {
           <td><b style={{ color: ok === pc.length ? 'var(--ok)' : 'var(--warn)' }}>{ok}/{pc.length}</b></td></tr>; })}
       </tbody></table></div></Card>
       : <Card title="Certificates" sub="When each was done, when it ends and what to do next." action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search home or certificate" /><Tabs value={f} onChange={setF} items={[{ id: 'action', label: 'Needs action', count: C.filter(c => c.status !== 'Valid').length }, { id: 'Overdue', label: 'Overdue' }, { id: 'Missing', label: 'Missing' }, { id: 'soon', label: 'Ending soon' }, { id: 'all', label: 'All', count: C.length }]} /></div>}>
-        <CertTable list={list} /></Card>}
+        <CertTable list={list} search={false} /></Card>}
   </>;
 }
 

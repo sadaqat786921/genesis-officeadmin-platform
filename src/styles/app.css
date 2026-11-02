@@ -758,6 +758,30 @@ button.sb-st:hover { filter: brightness(.97); }
 .hrow.click { cursor: pointer; border-radius: 10px; } .hrow.click:hover { background: var(--bg-subtle); }
 .htext { font-size: 13px; line-height: 1.45; } .htext b { font-weight: 700; }
 tr.static { cursor: default; } tr.static:hover td { background: none; }
+/* fee, VAT and lease */
+.feebox { display: flex; flex-direction: column; border: 1px solid var(--border-default); border-radius: var(--r-lg); overflow: hidden; }
+.feebox > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--border-subtle); font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.feebox > div:first-child { border-top: 0; }
+.feebox b { color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.feebox b em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+.feebox .vat { background: var(--info-bg); color: var(--info); } .feebox .vat b { color: var(--info); }
+.feebox .muted2 b { color: var(--text-tertiary); font-weight: 700; }
+.feebox .tot { background: var(--bg-brand-subtle); color: var(--text-brand); } .feebox .tot b { color: var(--text-brand); font-size: 15px; }
+.feesplit { display: flex; height: 30px; border-radius: 8px; overflow: hidden; font-size: 11px; font-weight: 700; }
+.feesplit > div { display: flex; align-items: center; justify-content: center; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feesplit .fs-a { background: var(--bg-accent); color: var(--text-on-accent); min-width: 120px; } .feesplit .fs-b { background: var(--bg-brand); color: var(--text-on-brand); }
+.seg2 { display: inline-flex; padding: 3px; gap: 3px; border: 1px solid var(--border-default); border-radius: var(--r-lg); background: var(--bg-subtle); align-self: flex-start; }
+.seg2 button { border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--text-tertiary); padding: 9px 14px; border-radius: 9px; cursor: pointer; }
+.seg2 button.on { background: var(--bg-brand); color: var(--text-on-brand); }
+.lsec { display: flex; flex-direction: column; gap: 2px; padding-top: 12px; border-top: 1px solid var(--border-subtle); } .lsec b { font-size: 13.5px; font-weight: 800; }
+/* list filters */
+.fbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fbar .minisearch { width: 220px; }
+.fsel { height: 38px; border: 1px solid var(--border-default); border-radius: var(--r-lg); background: #fff; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); padding: 0 30px 0 12px; max-width: 220px; }
+.frange { display: inline-flex; align-items: center; gap: 6px; height: 38px; border: 1px solid var(--border-default); border-radius: var(--r-lg); background: #fff; padding: 0 10px; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.frange input { border: 0; outline: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); background: none; width: 124px; }
+.fclear { font-size: 12.5px; } .fcount { margin-left: auto; font-weight: 600; }
+.card > .fbar, .fbar + .tablewrap, .fbar + .divlist, .fbar + .hlist { margin-top: 0; }
 /* pipeline board (Lettings, Planned Switch) */
 .ptool { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .pchips { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -34,7 +34,7 @@ function JobList() {
     <Card title="Jobs" sub="Click a job to move it on, one step at a time: price, approval, contractor, work, photo proof, approval and invoice."
       action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search jobs or homes" /><Tabs value={kind} onChange={setKind} items={[{ id: 'all', label: 'All homes' }, { id: 'managed', label: 'Managed' }, { id: 'client', label: 'Client homes' }]} /></div>}>
       <Tabs value={f} onChange={setF} items={[{ id: 'open', label: 'Open' }, { id: 'urgent', label: 'Emergency' }, { id: 'approval', label: 'Waiting approval' }, { id: 'proof', label: 'Photos to check' }, { id: 'done', label: 'Finished' }]} />
-      <JobTable list={list} />
+      <JobTable list={list} search={false} />
     </Card>
     {add && <NewJobModal onClose={() => setAdd(false)} onCreated={id => s.go('jobs', id)} />}
   </>;

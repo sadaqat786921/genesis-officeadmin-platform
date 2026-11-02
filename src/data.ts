@@ -55,7 +55,7 @@ export const STAFF: Staff[] = [
 export const ADMINS = STAFF.filter(s => s.role === 'Office Admin' && s.active);
 
 /* ---------- landlords ---------- */
-export interface Landlord { id: string; name: string; email: string; phone: string; billing: string; plan: Plan; start: string; admin: string; status: 'Active' | 'Invite sent'; bank: string; comms: Comm[] }
+export interface Landlord { id: string; name: string; email: string; phone: string; billing: string; plan: Plan; start: string; admin: string; status: 'Active' | 'Invite sent'; bank: string; comms: Comm[]; allowance?: number }
 export const LANDLORDS: Landlord[] = [
   { id: 'L1', name: 'Margaret Okafor', email: 'm.okafor@mail.co.uk', phone: '07700 900111', billing: '12 Oak Street, London N6 2AB', plan: 16, start: '1 Apr 2026', admin: 'et', status: 'Active', bank: 'Barclays ···· 4821', comms: [c('2 Oct 2026, 11:04', 'Emma Thompson', 'Email', 'Monthly statement for September sent.', 'out', 'Your September statement')] },
   { id: 'L2', name: 'David Hughes', email: 'd.hughes@mail.co.uk', phone: '07700 900222', billing: '22 Oak Avenue, London N8 1QP', plan: 20, start: '15 Jan 2026', admin: 'ps', status: 'Active', bank: 'HSBC ···· 1190', comms: [c('13 Oct 2026, 16:50', 'Priya Shah', 'Email', 'Roof leak at 22 Oak Avenue needs a repair at £680. This is over your £300 job limit, so we need your OK before we book it.', 'out', 'Repair approval needed · 22 Oak Avenue'), c('14 Oct 2026, 09:22', 'David Hughes', 'Email', 'Can you send me photos of the ceiling first please?', 'in', 'Re: Repair approval needed · 22 Oak Avenue')] },
@@ -76,7 +76,7 @@ export const CLIENTS: Client[] = [
 ];
 
 /* ---------- properties ---------- */
-export interface Property { id: string; address: string; area: string; type: 'House' | 'Flat' | 'HMO'; rooms?: number; beds: number; baths: number; managed: boolean; owner: string; rent: number; status: 'Let' | 'Vacant' | 'Ready to let' | 'Partly let'; admin: string; photo: string; budget: number; used: number; gas: boolean; added: string }
+export interface Property { id: string; address: string; area: string; type: 'House' | 'Flat' | 'HMO'; rooms?: number; beds: number; baths: number; managed: boolean; owner: string; rent: number; status: 'Let' | 'Vacant' | 'Ready to let' | 'Partly let'; admin: string; photo: string; budget: number; used: number; gas: boolean; added: string; arrangement?: 'Managed' | 'Leased'; lease?: Lease }
 export const PROPERTIES: Property[] = [
   { id: 'P1', address: '12 Oak Street', area: 'Islington, London N1', type: 'House', beds: 3, baths: 1, managed: true, owner: 'L1', rent: 1250, status: 'Let', admin: 'et', photo: 'images/home1.jpg', budget: 1800, used: 1296, gas: true, added: '1 Apr 2026' },
   { id: 'P2', address: '22 Oak Avenue', area: 'Highbury, London N5', type: 'House', beds: 4, baths: 2, managed: true, owner: 'L2', rent: 1450, status: 'Let', admin: 'ps', photo: 'images/home2.jpg', budget: 2400, used: 1104, gas: true, added: '15 Jan 2026' },
@@ -291,7 +291,7 @@ export const RENT: RentRow[] = [
 ];
 
 /* ---------- invoices ---------- */
-export interface Invoice { id: string; to: string; toKind: 'Landlord' | 'Client'; job?: string; amount: number; paid: number; terms: string; issued: string; due: string; overdue: boolean; items: { desc: string; amount: number; activity?: string; qty?: number; rate?: number; code?: string }[]; site?: string; note?: string; memo?: string; attachments?: string[]; billTo?: string; paidAt?: string }
+export interface Invoice { vat?: number; vatRate?: number; vatNo?: string; id: string; to: string; toKind: 'Landlord' | 'Client'; job?: string; amount: number; paid: number; terms: string; issued: string; due: string; overdue: boolean; items: { desc: string; amount: number; activity?: string; qty?: number; rate?: number; code?: string }[]; site?: string; note?: string; memo?: string; attachments?: string[]; billTo?: string; paidAt?: string }
 export const INVOICES: Invoice[] = [
   { id: 'INV-1042', to: 'L4', toKind: 'Landlord', job: 'J5', amount: 95, paid: 95, terms: 'Straight away', issued: '7 Oct 2026', due: '7 Oct 2026', overdue: false, items: [{ desc: 'Tap replacement, 31 Ash Grove', amount: 95 }] },
   { id: 'INV-1043', to: 'A2', toKind: 'Client', job: 'J9', amount: 150, paid: 0, terms: '30 days', issued: '4 Oct 2026', due: '3 Nov 2026', overdue: false, items: [{ activity: 'Materials', desc: 'Extractor fan 100mm with timer', qty: 1, rate: 54, amount: 54 }, { activity: 'Labour', desc: 'Remove old fan, fit and test new fan (hourly)', qty: 2, rate: 48, amount: 96 }], site: '88 Victoria Road' },
@@ -436,3 +436,37 @@ export const CATALOGUE: Product[] = [
   { code: 'WH/3KW', name: 'Instant hand wash heater', desc: 'Triton Instaflow 3kW hand wash heater', rate: 81.9, kind: 'Material' },
   { code: 'TAP/MIX', name: 'Mixer tap', desc: 'Kitchen mixer tap, supply and fit', rate: 95, kind: 'Service' },
 ];
+
+/* ---------- leased by LSP ----------
+   LSP rents the whole home from its owner and is the landlord to the occupiers.
+   The owner stays on record under "Lease From". No management fee applies.
+   Occupier rent comes in as normal; lease rent goes out to the owner on its own schedule. */
+export interface Lease {
+  ref: string; start: string; end: string; review: string; breakDate: string; notice: string; rent: number; frequency: 'Monthly' | 'Quarterly';
+  firstDue: string; dueDay: number; doc?: string; use: string; sublet: string; ownerDoes: string; lspDoes: string;
+  budget: number; budgetFrom: string; budgetTo: string; payTo: string; activated: string; by: string;
+}
+export interface LeasePay { id: string; property: string; month: string; due: string; amount: number; paid: number; history: { date: string; amount: number; ref: string }[] }
+
+PROPERTIES.push({ id: 'P15', address: '6 Rosebery Gardens', area: 'Crouch End, London N8', type: 'House', beds: 3, baths: 1, managed: true, owner: 'L1', rent: 1800, status: 'Let', admin: 'et', photo: 'images/home2.jpg', budget: 900, used: 310, gas: true, added: '1 Jun 2026', arrangement: 'Leased',
+  lease: { ref: 'LSP-LEASE-0007', start: '1 Jun 2026', end: '31 May 2029', review: '1 Jun 2027', breakDate: '1 Jun 2028', notice: '3 months in writing', rent: 1200, frequency: 'Monthly', firstDue: '1 Jun 2026', dueDay: 1, doc: 'lease-6-rosebery-gardens-signed.pdf', use: 'Residential letting to tenants', sublet: 'Allowed, on assured shorthold tenancies', ownerDoes: 'Building insurance, roof and structure', lspDoes: 'Day-to-day repairs, safety checks, inspections, finding tenants', budget: 900, budgetFrom: '1 Jun 2026', budgetTo: '31 May 2027', payTo: 'Barclays ···· 4821', activated: '1 Jun 2026, 10:00', by: 'Sarah Khan' } });
+TENANTS.push({ id: 'T13', name: 'Grace Adeyemi', email: 'grace.adeyemi@mail.co.uk', phone: '07700 903015', property: 'P15', rent: 1800, deposit: 2076, depositRef: 'DPS-770415', depositScheme: 'DPS', start: '1 Jun 2026', end: '31 May 2027', status: 'Live', employment: 'Pharmacist, Whittington Hospital', emergency: 'Tunde Adeyemi · 07700 913015', rentDay: 1, kyc: verified(), comms: [] });
+SAFETY.push(cert('SC40', 'P15', 'Gas safety', '28 May 2026, 10:00', '28 May 2027', { contractor: 'C1' }), cert('SC41', 'P15', 'Electrical (EICR)', '27 May 2026, 14:00', '27 May 2031', { contractor: 'C5' }), cert('SC42', 'P15', 'Energy (EPC)', '20 Apr 2026, 09:00', '20 Apr 2036'));
+RENT.push({ id: 'R13', tenant: 'T13', month: 'Oct 2026', due: '1 Oct 2026', amount: 1800, paid: 1800, history: [{ date: '1 Oct 2026', amount: 1800, note: 'Bank transfer' }], reminders: [] });
+export const LEASE_PAYS: LeasePay[] = [
+  { id: 'LP1', property: 'P15', month: 'Aug 2026', due: '1 Aug 2026', amount: 1200, paid: 1200, history: [{ date: '1 Aug 2026', amount: 1200, ref: 'BACS 88213' }] },
+  { id: 'LP2', property: 'P15', month: 'Sep 2026', due: '1 Sep 2026', amount: 1200, paid: 1200, history: [{ date: '1 Sep 2026', amount: 1200, ref: 'BACS 90144' }] },
+  { id: 'LP3', property: 'P15', month: 'Oct 2026', due: '1 Oct 2026', amount: 1200, paid: 700, history: [{ date: '2 Oct 2026', amount: 700, ref: 'BACS 91877' }] },
+  { id: 'LP4', property: 'P15', month: 'Nov 2026', due: '1 Nov 2026', amount: 1200, paid: 0, history: [] },
+];
+
+LANDLORDS.forEach(l => { if (l.id === 'L1') l.allowance = 600; if (l.id === 'L2') l.allowance = 900; if (l.id === 'L5') l.allowance = 900; });
+
+/* Maintenance budget for managed homes on a fee plan: 20% of the LSP fee before VAT, for 12 months.
+   Earlier spending keeps the same share of the budget so the example alerts still show. */
+PROPERTIES.forEach(p => {
+  if (!p.managed || p.arrangement === 'Leased') return;
+  const plan = LANDLORDS.find(l => l.id === p.owner)?.plan ?? 16;
+  const nb = plan === 10 ? 0 : Math.round(p.rent * plan / 100 * 0.2 * 12);
+  p.used = p.budget ? Math.round(p.used / p.budget * nb) : 0; p.budget = nb;
+});

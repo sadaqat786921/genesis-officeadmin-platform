@@ -4,7 +4,9 @@ import { useStore, useLookups, money, landlordBudget, budgetTone } from '../stor
 import { PLAN, SUPERVISOR, nowStamp, type Comm } from '../data';
 import { sendRequest } from './Requests';
 import { ME_NAME } from '../data';
-import { Avatar, Bar, Btn, Card, Chip, DetailHead, Field, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Select, Stat, Tabs, Text, Timeline, CommsLog, ActionCard, Empty, Reason } from '../ui';
+import { Avatar, Bar, Btn, Card, Chip, DetailHead, Field, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Select, Stat, Tabs, Text, Timeline, CommsLog, ActionCard, Empty, Reason , FilterBar, applyFlt, useFlt } from '../ui';
+import { PlanPrice, AllowanceCard } from './Money';
+import { feeOf, pctText, isLeased } from '../pricing';
 import { PageHeader, crumbsFor } from '../Shell';
 import { AddPropertyModal, adminName } from './shared';
 import { CertTable, InspTable, InvoiceTable, JobTable, certTone } from './tables';
@@ -29,7 +31,7 @@ function LandlordList() {
       <Kpi icon={<ShieldCheck size={18} />} tone="ok" label="Plans" value={<span style={{ fontSize: 18 }}>{([10, 12, 16, 20] as const).map(p => `${s.landlords.filter(l => l.plan === p).length}×${p}%`).join('  ')}</span>} caption="10% · 12% · 16% · 20%" />
     </div>
     <Card title="Your landlords" sub={`The landlords ${SUPERVISOR} gave you. Click one to see their homes, safety checks, inspections, jobs and money.`} action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search name or email" /><Tabs value={plan} onChange={setPlan} items={[{ id: 'all', label: 'All plans' }, { id: '12', label: '12%' }, { id: '16', label: '16%' }, { id: '20', label: '20%' }]} /></div>}>
-      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Plan</th><th>Homes</th><th>Repair budget used</th><th>Safety</th><th>Office Admin</th><th>Login</th></tr></thead><tbody>
+      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Plan</th><th>Homes</th><th>Maintenance budget used</th><th>Safety</th><th>Office Admin</th><th>Login</th></tr></thead><tbody>
         {list.map(l => { const b = landlordBudget(s, l.id); const bad = s.safety.filter(c => b.props.some(p => p.id === c.property) && ['Overdue', 'Missing'].includes(c.status)).length; return (
           <tr key={l.id} onClick={() => s.go('landlords', l.id)}><td><span className="cell"><Avatar name={l.name} /><span className="stack"><b className="strong">{l.name}</b><span className="caption">{l.email}</span></span></span></td>
             <td><Chip tone="brand" dot={false}>{l.plan}% · limit {money(PLAN[l.plan].limit)}</Chip></td><td>{b.props.length}</td>
@@ -53,18 +55,19 @@ function LandlordPage({ id }: { id: string }) {
   const invs = s.invoices.filter(i => i.toKind === 'Landlord' && i.to === id);
   const bad = certs.filter(c => ['Overdue', 'Missing', 'Due soon'].includes(c.status));
   const waiting = jobs.filter(j => j.status === 'Waiting approval');
+  const [hf, setHf] = useFlt();
   const acts = s.activity.filter(a => a.what.includes(l.name) || homes.some(p => a.what.includes(p.address)));
   const addComm = (c: Comm) => { s.setLandlords(ls => ls.map(x => x.id === id ? { ...x, comms: [...x.comms, c] } : x)); s.log(`${c.channel === 'Email' ? 'Emailed' : c.channel === 'Call' ? 'Called' : 'Added a note for'} ${l.name}`, 'Landlords'); s.toast('Saved'); };
   return <>
     <PageHeader crumbs={crumbsFor('landlords', s.go, l.name)} back={() => s.go('landlords')} title={l.name}
       action={<div className="flex">{l.status === 'Invite sent' && <Btn kind="outline" icon={<Mail size={16} />} onClick={() => { s.toast(`Login email sent again to ${l.email}`); s.log(`Resent login email to ${l.name}`, 'Landlords'); }}>Resend login</Btn>}<Btn kind="outline" icon={<Pencil size={16} />} onClick={() => setEdit(true)}>Edit details</Btn><Btn icon={<Plus size={18} />} onClick={() => setAddP(true)}>Add property</Btn></div>} />
     <DetailHead media={<Avatar name={l.name} size="xl" />} title={l.name}
-      chips={<><Chip tone="brand" dot={false}>{l.plan}% plan · limit {money(PLAN[l.plan].limit)}</Chip>{l.status === 'Active' ? <Chip tone="ok">Login active</Chip> : <Chip tone="warn">Invite sent</Chip>}</>}
+      chips={<><Chip tone="brand" dot={false}>{l.plan}% plan{feeOf(1, l.plan, s.vat).on ? ` · ${pctText(feeOf(1, l.plan, s.vat).incl)} incl. VAT` : ''} · limit {money(PLAN[l.plan].limit)}</Chip>{l.status === 'Active' ? <Chip tone="ok">Login active</Chip> : <Chip tone="warn">Invite sent</Chip>}</>}
       meta={[['Email', l.email], ['Phone', l.phone], ['Office Admin', adminName(l.admin)], ['Landlord since', l.start]]}
       aside={<div className="flex" style={{ gap: 8 }}><Btn sm kind="outline" icon={<Phone size={14} />} onClick={() => s.toast('Calling ' + l.phone)}>Call</Btn><Btn sm kind="outline" icon={<Mail size={14} />} onClick={() => setTab('comms')}>Email</Btn></div>} />
     <div className="grid g4">
       <Stat label="Homes" value={homes.length} sub={`${homes.filter(p => p.status === 'Let').length} fully let`} />
-      <Stat label="Repair budget used" value={b.budget ? b.pct + '%' : '—'} sub={b.budget ? `${money(b.used)} of ${money(b.budget)}` : 'Starts with the agreement'} tone={budgetTone(b.pct)} />
+      <Stat label="Maintenance budget used" value={b.budget ? b.pct + '%' : '—'} sub={b.budget ? `${money(b.used)} of ${money(b.budget)}` : 'Starts with the agreement'} tone={budgetTone(b.pct)} />
       <Stat label="Safety checks" value={bad.length ? `${bad.length} to do` : 'All in date'} sub={`${certs.length} certificates`} tone={bad.some(c => c.status !== 'Due soon') ? 'err' : bad.length ? 'warn' : 'ok'} />
       <Stat label="With the Supervisor" value={waiting.length} sub={waiting.length ? money(waiting.reduce((a, j) => a + j.price, 0)) + ' to approve' : 'nothing waiting'} tone={waiting.length ? 'warn' : 'ok'} />
     </div>
@@ -78,18 +81,19 @@ function LandlordPage({ id }: { id: string }) {
             {bad.map(c => <button key={c.id} className="item click" onClick={() => s.go('safety', c.id)}><span className={`tile t-${certTone(c.status)}`}><ShieldCheck size={16} /></span><div className="stack grow"><b>{c.kind}</b><span className="caption">{L.prop(c.property)?.address} · {c.status === 'Missing' ? 'no certificate' : 'ends ' + c.expires}</span></div><Chip tone={certTone(c.status)}>{c.status}</Chip></button>)}
           </div> : <Note tone="ok">Nothing needs action for {l.name}.</Note>}
         </Card>
-        <Card title="Repair budget by property" sub="Every property has its own yearly budget. Alerts go to the landlord at 70%, 90% and 100%." action={<Btn sm kind="ghost" onClick={() => s.go('requests')}>All budgets</Btn>}>
+        <Card title="Maintenance budget by property" sub="Each home has its own yearly budget: 20% of the LSP fee before VAT, or the amount set for a leased home. Staff only. Alerts at 70%, 90% and 100%." action={<Btn sm kind="ghost" onClick={() => s.go('requests')}>All budgets</Btn>}>
           {homes.length ? <div className="divlist">{homes.map(p => { const pct = p.budget ? Math.round(p.used / p.budget * 100) : 0; return <button key={p.id} className="item click" onClick={() => s.go('properties', p.id)}><div className="photo" style={{ width: 48, height: 40, flex: 'none', backgroundImage: `url(${p.photo})` }} /><div className="stack grow" style={{ gap: 6 }}><span className="flex between"><b>{p.address}</b><span className="caption">{money(p.used)} of {money(p.budget)} · {pct}%</span></span><Bar value={pct} tone={budgetTone(pct)} /></div></button>; })}</div> : <Empty>No properties yet.</Empty>}
         </Card>
       </div>
       <div className="col">
         <Card title="Contact and billing"><KV rows={[['Email', l.email], ['Phone', l.phone], ['Billing address', l.billing], ['Bank for payouts', l.bank], ['ID checks', 'Not needed for landlords']]} /></Card>
-        <Card title="Plan"><div className="flex" style={{ gap: 14 }}><span className="metric">{l.plan}%</span><div className="stack"><b>Job limit {money(PLAN[l.plan].limit)}</b><span className="caption">Jobs above this go to {SUPERVISOR} to approve</span></div></div><Btn sm kind="outline" onClick={() => setPlanReq(true)}>Ask for a plan change</Btn></Card>
+        <Card title="Plan"><div className="flex" style={{ gap: 14 }}><span className="metric">{l.plan}%</span><PlanPrice plan={l.plan} /></div><span className="caption">Job limit {money(PLAN[l.plan].limit)}. Jobs above this go to {SUPERVISOR} to approve.</span><Btn sm kind="outline" onClick={() => setPlanReq(true)}>Ask for a plan change</Btn></Card>
+        <AllowanceCard l={l} />
       </div>
     </div>}
 
     {tab === 'homes' && <Card title="Properties" action={<Btn sm icon={<Plus size={14} />} onClick={() => setAddP(true)}>Add property</Btn>}>
-      <div className="grid g3">{homes.map(p => { const pct = p.budget ? Math.round(p.used / p.budget * 100) : 0; const pc = s.safety.filter(c => c.property === p.id && ['Overdue', 'Missing'].includes(c.status)).length; return <button key={p.id} className="kcard" onClick={() => s.go('properties', p.id)}><div className="photo" style={{ height: 130, backgroundImage: `url(${p.photo})` }} /><div className="flex between"><b>{p.address}</b><Chip tone={p.status === 'Let' ? 'ok' : 'warn'}>{p.status}</Chip></div><span className="caption">{p.area} · {p.type === 'HMO' ? `${p.rooms} rooms` : `${p.beds} bed ${p.type.toLowerCase()}`}</span><div className="flex between"><b style={{ color: 'var(--text-brand)' }}>{money(p.rent)} pcm</b>{pc ? <Chip tone="err" dot={false}><ShieldCheck size={12} /> {pc} safety</Chip> : <Chip tone="ok" dot={false}><ShieldCheck size={12} /> In date</Chip>}</div><span className="caption">Budget {pct}% used</span><Bar value={pct} tone={budgetTone(pct)} /></button>; })}
+      <div className="grid g3">{homes.map(p => { const pct = p.budget ? Math.round(p.used / p.budget * 100) : 0; const pc = s.safety.filter(c => c.property === p.id && ['Overdue', 'Missing'].includes(c.status)).length; return <button key={p.id} className="kcard" onClick={() => s.go('properties', p.id)}><div className="photo" style={{ height: 130, backgroundImage: `url(${p.photo})` }} /><div className="flex between"><b>{p.address}</b>{isLeased(p) ? <Chip tone="brand" dot={false}>Leased to LSP</Chip> : <Chip tone={p.status === 'Let' ? 'ok' : 'warn'}>{p.status}</Chip>}</div><span className="caption">{p.area} · {p.type === 'HMO' ? `${p.rooms} rooms` : `${p.beds} bed ${p.type.toLowerCase()}`}</span><div className="flex between"><b style={{ color: 'var(--text-brand)' }}>{money(p.rent)} pcm</b>{pc ? <Chip tone="err" dot={false}><ShieldCheck size={12} /> {pc} safety</Chip> : <Chip tone="ok" dot={false}><ShieldCheck size={12} /> In date</Chip>}</div><span className="caption">Budget {pct}% used</span><Bar value={pct} tone={budgetTone(pct)} /></button>; })}
         {!homes.length && <Empty icon={<Home size={22} />}>No homes yet. Add the landlord's first property.</Empty>}</div>
     </Card>}
 
@@ -106,7 +110,7 @@ function LandlordPage({ id }: { id: string }) {
     {tab === 'money' && <Card title="Invoices to this landlord" action={<Btn sm kind="ghost" icon={<Receipt size={14} />} onClick={() => s.go('rent')}>Rent & Invoices</Btn>}><InvoiceTable list={invs} /></Card>}
     {tab === 'comms' && <div className="dgrid"><Card title="Communication" sub="Calls, emails and notes with this landlord."><CommsLog items={l.comms} to={l.email} onAdd={addComm} /></Card>
       <ActionCard title="Tip" tone="neutral" text="Budget alert emails and approval requests are saved here automatically." /></div>}
-    {tab === 'history' && <Card title="History" sub="Everything that happened, with the date and time."><Timeline items={[...acts.map(a => ({ at: a.at, text: a.what, by: a.who })), { at: l.start, text: `Account created on the ${l.plan}% plan`, by: ME_NAME }]} /></Card>}
+    {tab === 'history' && <Card title="History" sub="Everything that happened, with the date and time."><FilterBar f={hf} set={setHf} placeholder="Search history" /><Timeline items={applyFlt([...acts.map(a => ({ at: a.at, text: a.what, by: a.who })), { at: l.start, text: `Account created on the ${l.plan}% plan`, by: ME_NAME }], hf, { text: x => `${x.text} ${x.by}`, date: x => x.at })} /></Card>}
 
     {addP && <AddPropertyModal owner={id} managed onClose={() => setAddP(false)} />}
     {edit && <EditLandlord id={id} onClose={() => setEdit(false)} />}

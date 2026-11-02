@@ -227,3 +227,38 @@ export function PhotoPicker({ value, onChange }: { value: string; onChange: (url
     <input ref={ref} type="file" accept="image/*" hidden aria-label="Property photo" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => onChange(String(r.result)); r.readAsDataURL(f); }} />
   </div>;
 }
+
+/* ---------- list filters: search, type, and a date range or year ---------- */
+export interface Flt { q: string; type: string; from: string; to: string; year: string }
+export const NO_FILTER: Flt = { q: '', type: 'all', from: '', to: '', year: 'all' };
+export function useFlt() { return useState<Flt>(NO_FILTER); }
+const dOf = (v?: string) => { if (!v) return null; const d = parseDate(v.split(', ')[0]); return isNaN(d.getTime()) ? null : d; };
+/** Keep the rows that match the search text, the type and the dates. */
+export function applyFlt<T>(list: T[], f: Flt, get: { text: (x: T) => string; type?: (x: T) => string; date?: (x: T) => string | undefined }): T[] {
+  const q = f.q.trim().toLowerCase();
+  const from = f.from ? new Date(f.from + 'T00:00').getTime() : null, to = f.to ? new Date(f.to + 'T23:59').getTime() : null;
+  return list.filter(x => {
+    if (q && !get.text(x).toLowerCase().includes(q)) return false;
+    if (f.type !== 'all' && get.type && get.type(x) !== f.type) return false;
+    if (get.date && (from !== null || to !== null || f.year !== 'all')) {
+      const d = dOf(get.date(x)); if (!d) return false;
+      if (from !== null && d.getTime() < from) return false;
+      if (to !== null && d.getTime() > to) return false;
+      if (f.year !== 'all' && String(d.getFullYear()) !== f.year) return false;
+    }
+    return true;
+  });
+}
+export const yearsOf = <T,>(list: T[], date: (x: T) => string | undefined) => [...new Set(list.map(x => dOf(date(x))?.getFullYear()).filter(Boolean) as number[])].sort((a, b) => b - a).map(String);
+/** One row of filters above a list. mode "range" shows From/To dates, "year" shows a year picker. */
+export function FilterBar({ f, set, placeholder = 'Search', types, typeLabel = 'All types', mode = 'range', years, shown, total, search = true }: { f: Flt; set: (f: Flt) => void; placeholder?: string; types?: string[]; typeLabel?: string; mode?: 'range' | 'year' | 'none'; years?: string[]; shown?: number; total?: number; search?: boolean }) {
+  const active = f.q || f.type !== 'all' || f.from || f.to || f.year !== 'all';
+  return <div className="fbar">
+    {search && <MiniSearch value={f.q} onChange={q => set({ ...f, q })} placeholder={placeholder} />}
+    {types && types.length > 1 && <select className="fsel" aria-label={typeLabel} value={f.type} onChange={e => set({ ...f, type: e.target.value })}><option value="all">{typeLabel}</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select>}
+    {mode === 'range' && <span className="frange"><input type="date" aria-label="From date" value={f.from} onChange={e => set({ ...f, from: e.target.value })} /><span>to</span><input type="date" aria-label="To date" value={f.to} onChange={e => set({ ...f, to: e.target.value })} /></span>}
+    {mode === 'year' && <select className="fsel" aria-label="Year" value={f.year} onChange={e => set({ ...f, year: e.target.value })}><option value="all">All years</option>{(years ?? []).map(y => <option key={y} value={y}>{y}</option>)}</select>}
+    {active && <button className="link fclear" onClick={() => set(NO_FILTER)}>Clear</button>}
+    {shown !== undefined && total !== undefined && active && <span className="caption fcount">{shown} of {total}</span>}
+  </div>;
+}

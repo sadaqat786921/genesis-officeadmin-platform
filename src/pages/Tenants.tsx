@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { UserCheck, LogOut, DoorOpen, AlertTriangle, Mail, Phone, Bell, PoundSterling, Wrench, Plus, FileSignature, ShieldCheck, ClipboardCheck, ArrowRight, Eye, CalendarClock, CheckCircle2, Wallet, Home } from 'lucide-react';
 import { useStore, useLookups, money, rentStatus } from '../store';
-import { MONTHS, MOVE_OUT_STEPS, fmtDate, nowStamp, parseDate, type Comm, type RentRow, type Tenant, type TenantStatus } from '../data';
+import { MONTHS, MOVE_OUT_STEPS, fmtDate, nowStamp, parseDate, type Comm, type RentRow, type Tenant, type TenantStatus, type DocStatus } from '../data';
+import { isLeased, LSP_NAME } from '../pricing';
 import { ME_NAME } from '../data';
-import { ActionCard, Avatar, Btn, Card, Chip, CommsLog, DetailHead, DocRow, Field, HSteps, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Select, Stat, Tabs, Text, Area, Empty, sortComms, dateLabel } from '../ui';
+import { ActionCard, Avatar, Btn, Card, Chip, CommsLog, DetailHead, DocRow, Field, HSteps, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Select, Stat, Tabs, Text, Area, Empty, sortComms, dateLabel, FilterBar, applyFlt, useFlt, yearsOf } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { BookInspectionModal, HomeCard, NewJobModal, PaymentModal, adminName, firstName } from './shared';
 import { JobTable, certTone } from './tables';
@@ -63,7 +64,7 @@ function TenantPage({ id }: { id: string }) {
   const s = useStore(); const L = useLookups(); const t = s.tenants.find(x => x.id === id)!;
   const [tab, setTab] = useState<TTab>(t.status === 'Live' ? 'overview' : 'moveout');
   const [m, setM] = useState<'' | 'moveout' | 'pay' | 'issue' | 'insp' | 'deposit' | 'gone'>('');
-  const p = L.prop(t.property); const ll = L.landlord(p?.owner);
+  const p = L.prop(t.property); const ll = L.landlord(p?.owner); const [rf, setRf] = useFlt();
   const row = s.rent.find(r => r.tenant === id); const rs = row ? rentStatus(row) : null; const owed = row ? row.amount - row.paid : 0;
   const issues = s.jobs.filter(j => j.tenant === id || (j.property === t.property && j.by.includes(t.name)));
   const openIssues = issues.filter(j => !['Approved', 'Invoiced', 'Declined'].includes(j.status));
@@ -94,7 +95,7 @@ function TenantPage({ id }: { id: string }) {
       <div className="col">
         <div className="grid g2">
           <Card title="Personal details"><KV rows={[['Email', t.email], ['Phone', t.phone], ['Work', t.employment], ['Emergency contact', t.emergency]]} /></Card>
-          <Card title="Tenancy"><KV rows={[['Start', t.start], ['End', t.end], ['Rent', `${money(t.rent)} on day ${t.rentDay}`], ['Deposit', `${money(t.deposit)} · ${t.depositScheme}`], ['Deposit ref', t.depositRef], ['Landlord', ll?.name ?? '—']]} /></Card>
+          <Card title="Tenancy"><KV rows={[['Start', t.start], ['End', t.end], ['Rent', `${money(t.rent)} on day ${t.rentDay}`], ['Deposit', `${money(t.deposit)} · ${t.depositScheme}`], ['Deposit ref', t.depositRef], ['Landlord', isLeased(p) ? `${LSP_NAME} (leased from ${ll?.name})` : ll?.name ?? '—']]} /></Card>
         </div>
         <Card title="Latest communication" action={<Btn sm kind="ghost" onClick={() => setTab('comms')}>See all</Btn>}><CommsLog items={sortComms(t.comms).slice(0, 3)} emptyText="Nothing yet." /></Card>
       </div>
@@ -109,8 +110,9 @@ function TenantPage({ id }: { id: string }) {
 
     {tab === 'rent' && <div className="dgrid">
       <Card title="Rent history" sub="Every month with what was due and what came in.">
+        <FilterBar f={rf} set={setRf} placeholder="Search month" types={['Paid', 'Part-paid', 'Late', 'Due']} typeLabel="Any status" />
         <div className="tablewrap"><table className="t"><thead><tr><th>Month</th><th>Due</th><th>Rent</th><th>Paid</th><th>Paid on</th><th>Status</th></tr></thead><tbody>
-          {rentLedger(t, row).map(r => <tr key={r.month} style={{ cursor: 'default' }}><td className="strong">{r.month}{r.current && <div className="caption">This month</div>}</td><td>{r.due}</td><td>{money(r.amount)}</td><td>{money(r.paid)}</td><td>{r.on}</td><td><Chip tone={r.tone}>{r.label}</Chip></td></tr>)}
+          {applyFlt(rentLedger(t, row), rf, { text: r => `${r.month} ${r.label}`, type: r => r.label.startsWith('Part') ? 'Part-paid' : r.label.startsWith('Late') ? 'Late' : r.label === 'Paid' ? 'Paid' : 'Due', date: r => r.due }).map(r => <tr key={r.month} style={{ cursor: 'default' }}><td className="strong">{r.month}{r.current && <div className="caption">This month</div>}</td><td>{r.due}</td><td>{money(r.amount)}</td><td>{money(r.paid)}</td><td>{r.on}</td><td><Chip tone={r.tone}>{r.label}</Chip></td></tr>)}
         </tbody></table></div>
       </Card>
       <div className="col">
@@ -122,15 +124,7 @@ function TenantPage({ id }: { id: string }) {
       </div>
     </div>}
 
-    {tab === 'kyc' && <div className="dgrid">
-      <Card title="KYC documents" sub="Checked during Lettings. Kept for the whole tenancy.">{t.kyc.map(d => <DocRow key={d.name} name={d.name} status={d.status} meta={d.file ? `${d.file} · ${d.at ?? ''}` : 'Not on file'}><Btn sm kind="ghost" icon={<Eye size={14} />} onClick={() => s.toast('Opening ' + d.name)}>View</Btn></DocRow>)}</Card>
-      <Card title="Tenancy documents">
-        <DocRow name="Tenancy agreement" meta={`Signed by everyone · starts ${t.start}`}><Btn sm kind="ghost" icon={<FileSignature size={14} />} onClick={() => s.toast('Opening agreement')}>View</Btn></DocRow>
-        <DocRow name={`Deposit certificate · ${t.depositScheme}`} meta={`Reference ${t.depositRef} · ${money(t.deposit)}`}><Btn sm kind="ghost" icon={<ShieldCheck size={14} />} onClick={() => s.toast('Opening deposit certificate')}>View</Btn></DocRow>
-        <DocRow name="Move-in inspection report" meta={moveInInsp ? `${moveInInsp.date}, ${moveInInsp.time}` : 'Kept in Inspections'}>{moveInInsp && <Btn sm kind="ghost" icon={<ClipboardCheck size={14} />} onClick={() => s.go('inspections', moveInInsp.id)}>Open</Btn>}</DocRow>
-        <DocRow name="How to Rent guide and gas certificate" meta={`Sent on ${t.start}`} />
-      </Card>
-    </div>}
+    {tab === 'kyc' && <TenantDocs t={t} moveInInsp={moveInInsp} />}
 
     {tab === 'home' && <div className="dgrid">
       <div className="col">
@@ -193,4 +187,23 @@ function DepositModal({ t, onClose, onSave }: { t: Tenant; onClose: () => void; 
     <div className="grid g2"><Field label="Keep for damage or cleaning (£)"><Text value={d} onChange={setD} /></Field><Field label="What for"><Text value={note} onChange={setNote} placeholder="e.g. Carpet clean" /></Field></div>
     <Note tone={v ? 'warn' : 'ok'}>{v ? `${money(t.deposit - v)} goes back to ${t.name}. ${money(v)} is kept, with the reason.` : `The full ${money(t.deposit)} goes back to ${t.name}.`}</Note>
   </Modal>;
+}
+
+/** Every document for a tenant in one list, with search, type and year. */
+function TenantDocs({ t, moveInInsp }: { t: Tenant; moveInInsp?: { id: string; date: string; time: string } }) {
+  const s = useStore(); const [f, setF] = useFlt();
+  const all: { name: string; kind: 'KYC' | 'Tenancy'; meta: string; date?: string; status?: DocStatus; act?: () => void; icon: 'eye' | 'sign' | 'shield' | 'insp' }[] = [
+    ...t.kyc.map(d => ({ name: d.name, kind: 'KYC' as const, meta: d.file ? `${d.file} · ${d.at ?? ''}` : 'Not on file', date: d.at, status: d.status, act: () => s.toast('Opening ' + d.name), icon: 'eye' as const })),
+    { name: 'Tenancy agreement', kind: 'Tenancy', meta: `Signed by everyone · starts ${t.start}`, date: t.start, act: () => s.toast('Opening agreement'), icon: 'sign' },
+    { name: `Deposit certificate · ${t.depositScheme}`, kind: 'Tenancy', meta: `Reference ${t.depositRef} · ${money(t.deposit)}`, date: t.start, act: () => s.toast('Opening deposit certificate'), icon: 'shield' },
+    { name: 'Move-in inspection report', kind: 'Tenancy', meta: moveInInsp ? `${moveInInsp.date}, ${moveInInsp.time}` : 'Kept in Inspections', date: moveInInsp?.date ?? t.start, act: moveInInsp ? () => s.go('inspections', moveInInsp.id) : undefined, icon: 'insp' },
+    { name: 'How to Rent guide and gas certificate', kind: 'Tenancy', meta: `Sent on ${t.start}`, date: t.start, icon: 'eye' },
+  ];
+  const list = applyFlt(all, f, { text: d => `${d.name} ${d.meta}`, type: d => d.kind, date: d => d.date });
+  const ic = { eye: <Eye size={14} />, sign: <FileSignature size={14} />, shield: <ShieldCheck size={14} />, insp: <ClipboardCheck size={14} /> };
+  return <Card title="Documents" sub="KYC checked during Lettings and the tenancy documents. Kept for the whole tenancy.">
+    <FilterBar f={f} set={setF} placeholder="Search documents" types={['KYC', 'Tenancy']} typeLabel="All documents" mode="year" years={yearsOf(all, d => d.date)} shown={list.length} total={all.length} />
+    {list.map(d => <DocRow key={d.name} name={d.name} status={d.status} meta={`${d.kind} · ${d.meta}`}>{d.act && <Btn sm kind="ghost" icon={ic[d.icon]} onClick={d.act}>{d.icon === 'insp' ? 'Open' : 'View'}</Btn>}</DocRow>)}
+    {!list.length && <Empty>No documents match.</Empty>}
+  </Card>;
 }

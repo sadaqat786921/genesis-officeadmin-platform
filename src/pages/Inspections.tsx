@@ -30,7 +30,7 @@ function InspectionList() {
     </div>
     <Card title="Inspections" sub="Move-in, routine, move-out, gas, electrical and fire checks. Click one for the full report with photos and readings."
       action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search home or type" /><Tabs value={tab} onChange={setTab} items={[{ id: 'upcoming', label: 'Upcoming' }, { id: 'Not assigned', label: 'No inspector' }, { id: 'Report uploaded', label: 'To check' }, { id: 'Locked', label: 'Reports' }, { id: 'all', label: 'All' }]} /></div>}>
-      <InspTable list={list} />
+      <InspTable list={list} search={false} />
     </Card>
     {add && <BookInspectionModal onClose={() => setAdd(false)} onBooked={id => s.go('inspections', id)} />}
   </>;

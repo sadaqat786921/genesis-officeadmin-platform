@@ -27,13 +27,13 @@ export function downloadPdf(s: ReturnType<typeof useStore>, name: string) {
 }
 
 /* ================= The paper template (same look as LSP's own invoice) ================= */
-export function DocSheet({ kind, to, meta, site, lines, foot, stamp, children }: {
-  kind: string; to: { label: string; rows: string[] }; meta: [string, string][]; site?: string; lines?: Line[];
+export function DocSheet({ kind, to, meta, site, lines, foot, stamp, children, vatNo }: {
+  vatNo?: string; kind: string; to: { label: string; rows: string[] }; meta: [string, string][]; site?: string; lines?: Line[];
   foot?: [string, string][]; stamp?: { text: string; tone: 'ok' | 'info' | 'warn' }; children?: ReactNode;
 }) {
   return <div className="docwrap"><div className="paper">
     <div className="doc-h">
-      <div className="stack" style={{ gap: 2 }}><b className="doc-co">{COMPANY.name}</b>{COMPANY.address.map(a => <span key={a}>{a}</span>)}<span>{COMPANY.email}</span><span className="doc-reg">{COMPANY.reg}</span></div>
+      <div className="stack" style={{ gap: 2 }}><b className="doc-co">{COMPANY.name}</b>{COMPANY.address.map(a => <span key={a}>{a}</span>)}<span>{COMPANY.email}</span><span className="doc-reg">{COMPANY.reg}</span>{vatNo && <span className="doc-reg">VAT no. {vatNo}</span>}</div>
       <img src="images/logo.svg" alt="Landlord Service Plans" className="doc-logo" />
     </div>
     <div className="doc-title">{kind}{stamp && <span className={`doc-stamp s-${stamp.tone}`}>{stamp.text}</span>}</div>
@@ -163,7 +163,8 @@ export function InvoiceModal({ job, invoice, onClose }: { job?: Job; invoice?: s
     {inv && <div className="flex" style={{ gap: 8 }}><Chip tone={st!.tone}>{st!.label}</Chip>{inv.paidAt && <span className="caption">Paid {inv.paidAt}</span>}<span className="caption">Sent from Outlook to {email}</span></div>}
     <DocSheet kind="INVOICE" to={{ label: 'Invoice to', rows: toRows }} meta={[['Invoice', no.replace('INV-', '')], ['Date', d(issued)], ['Terms', terms === 'Straight away' ? 'Due on receipt' : 'Net ' + terms.replace(' days', '')], ['Due date', d(due)]]}
       site={inv?.site ?? (p ? p.address : undefined)} lines={lines}
-      foot={inv && inv.paid > 0 ? [['Total', '£' + num(total)], ['Paid', '−£' + num(inv.paid)], ['Balance due', '£' + num(left)]] : [['Balance due', '£' + num(total)]]}
+      vatNo={inv?.vat ? inv.vatNo : undefined}
+      foot={[...(inv?.vat ? [['Subtotal', '£' + num(r2(total - inv.vat))], [`VAT ${inv.vatRate ?? 20}%`, '£' + num(inv.vat)]] as [string, string][] : []), ...(inv && inv.paid > 0 ? [['Total', '£' + num(total)], ['Paid', '−£' + num(inv.paid)], ['Balance due', '£' + num(left)]] as [string, string][] : [['Balance due', '£' + num(total)]] as [string, string][])]}
       stamp={inv ? (left <= 0 ? { text: 'PAID', tone: 'ok' } : inv.overdue ? { text: 'OVERDUE', tone: 'warn' } : { text: 'SENT', tone: 'info' }) : undefined}>{inv?.note && <p className="doc-note">{inv.note}</p>}</DocSheet>
     {inv?.attachments?.length ? <span className="caption">Attached to the email: {inv.attachments.join(', ')}</span> : null}
     {!inv && <Note tone="ok">It goes from Outlook to {email} with the PDF attached{toKind === 'Landlord' ? ', and shows in the landlord portal' : ''}.</Note>}

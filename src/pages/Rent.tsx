@@ -3,25 +3,27 @@ import { PoundSterling, AlertTriangle, Bell, Receipt, Landmark, ArrowRight, File
 import { useStore, useLookups, money, rentStatus, type Lookups } from '../store';
 import { daysFrom, nowStamp, SUPERVISOR, type Landlord } from '../data';
 import { ME_NAME } from '../data';
-import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, Drawer, KV, Kpi, Modal, Note, Stat, Tabs, Timeline, Empty, MiniSearch } from '../ui';
+import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, Drawer, KV, Kpi, Modal, Note, Stat, Tabs, Timeline, Empty, MiniSearch, FilterBar, applyFlt, useFlt } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { PaymentModal, adminName, HomeCard } from './shared';
 import { InvoiceTable } from './tables';
 import { rentLedger } from './Tenants';
 import { EditorRoute, editorLink } from './Editor';
+import { OwnerPayments } from './Money';
+import { feeOf, isLeased, LSP_NAME } from '../pricing';
 
 type S = ReturnType<typeof useStore>;
 const PAY_DATE = '20 Oct 2026';
 
 export function payoutFor(s: S, l: Landlord) {
-  const props = s.properties.filter(p => p.managed && p.owner === l.id);
+  const props = s.properties.filter(p => p.managed && p.owner === l.id && !isLeased(p));
   const tenants = s.tenants.filter(t => props.some(p => p.id === t.property));
   const rows = s.rent.filter(r => tenants.some(t => t.id === r.tenant));
   const due = rows.reduce((a, r) => a + r.amount, 0), collected = rows.reduce((a, r) => a + r.paid, 0);
-  const fee = Math.round(collected * l.plan / 100);
+  const f = feeOf(collected, l.plan, s.vat); const fee = Math.round(f.net); const vat = Math.round(f.vat * 100) / 100;
   const bills = s.invoices.filter(i => i.toKind === 'Landlord' && i.to === l.id && i.paid < i.amount);
   const repairs = bills.reduce((a, i) => a + i.amount - i.paid, 0);
-  return { props, tenants, rows, due, collected, fee, repairs, bills, pay: Math.max(0, collected - fee - repairs), status: s.payouts[l.id] ?? 'Scheduled' };
+  return { props, tenants, rows, due, collected, fee, vat, vatOn: f.on, repairs, bills, pay: Math.max(0, Math.round((collected - fee - vat - repairs) * 100) / 100), status: s.payouts[l.id] ?? 'Scheduled' };
 }
 
 export function sendRentReminder(s: S, L: Lookups, rowId: string) {
@@ -40,10 +42,10 @@ export function Rent() {
 
 function RentHome() {
   const s = useStore(); const L = useLookups();
-  const [tab, setTab] = useState<'rent' | 'payouts' | 'invoices'>('rent'); const [f, setF] = useState<'all' | 'late' | 'part' | 'due' | 'paid'>('all'); const [q, setQ] = useState('');
+  const [tab, setTab] = useState<'rent' | 'payouts' | 'owners' | 'invoices'>('rent'); const [rf, setRf] = useFlt(); const [f, setF] = useState<'all' | 'late' | 'part' | 'due' | 'paid'>('all'); const [q, setQ] = useState('');
   const [pay, setPay] = useState<string | null>(null); const [stmt, setStmt] = useState<string | null>(null); const [bulk, setBulk] = useState(false);
   const R = s.rent;
-  const rows = R.filter(r => { const st = rentStatus(r); const t = L.tenant(r.tenant); return (f === 'all' || (f === 'late' ? st.tone === 'err' : f === 'part' ? st.label.startsWith('Part') : f === 'paid' ? st.label === 'Paid' : ['info', 'neutral'].includes(st.tone))) && (t?.name ?? '').toLowerCase().includes(q.toLowerCase()); });
+  const rows = applyFlt(R, rf, { text: () => '', date: r => r.due }).filter(r => { const st = rentStatus(r); const t = L.tenant(r.tenant); return (f === 'all' || (f === 'late' ? st.tone === 'err' : f === 'part' ? st.label.startsWith('Part') : f === 'paid' ? st.label === 'Paid' : ['info', 'neutral'].includes(st.tone))) && (t?.name ?? '').toLowerCase().includes(q.toLowerCase()); });
   const late = R.filter(r => rentStatus(r).tone === 'err');
   const lls = s.landlords.map(l => ({ l, p: payoutFor(s, l) })).filter(x => x.p.rows.length);
   const toPay = lls.filter(x => x.p.status !== 'Paid').reduce((a, x) => a + x.p.pay, 0);
@@ -56,10 +58,10 @@ function RentHome() {
       <Kpi icon={<Landmark size={18} />} tone="brand" label="To pay landlords" value={money(toPay)} caption={`on ${PAY_DATE}`} active={tab === 'payouts'} onClick={() => setTab('payouts')} />
       <Kpi icon={<Receipt size={18} />} tone="info" label="Unpaid invoices" value={invs.filter(i => i.paid < i.amount).length} caption={`${invs.filter(i => i.overdue).length} overdue`} active={tab === 'invoices'} onClick={() => setTab('invoices')} />
     </div>
-    <Tabs value={tab} onChange={setTab} items={[{ id: 'rent', label: 'Tenant rent', count: R.length }, { id: 'payouts', label: 'Landlord payouts', count: lls.length }, { id: 'invoices', label: 'Invoices', count: invs.length }]} />
+    <Tabs value={tab} onChange={setTab} items={[{ id: 'rent', label: 'Tenant rent', count: R.length }, { id: 'payouts', label: 'Landlord payouts', count: lls.length }, { id: 'owners', label: 'Owner lease payments', count: s.leasePays.length }, { id: 'invoices', label: 'Invoices', count: invs.length }]} />
     {tab === 'rent' && <Card title="Rent this month" sub="Staff check the bank and record what arrived. Click a tenant for their full rent account. Part payments carry forward."
       action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search tenant" />{late.length > 0 && <Btn sm kind="outline" icon={<Bell size={14} />} onClick={() => setBulk(true)}>Remind all late ({late.length})</Btn>}</div>}>
-      <Tabs value={f} onChange={setF} items={[{ id: 'all', label: 'All' }, { id: 'late', label: 'Late', count: late.length }, { id: 'part', label: 'Part-paid' }, { id: 'due', label: 'Due soon' }, { id: 'paid', label: 'Paid' }]} />
+      <div className="flex between wrap" style={{ gap: 10 }}><Tabs value={f} onChange={setF} items={[{ id: 'all', label: 'All' }, { id: 'late', label: 'Late', count: late.length }, { id: 'part', label: 'Part-paid' }, { id: 'due', label: 'Due soon' }, { id: 'paid', label: 'Paid' }]} /><FilterBar f={rf} set={setRf} search={false} /></div>
       <div className="tablewrap"><table className="t"><thead><tr><th>Tenant</th><th>Home</th><th>Due</th><th>Rent</th><th>Paid</th><th>Owed</th><th>Status</th><th>Reminders</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
         {rows.map(r => { const t = L.tenant(r.tenant); const st = rentStatus(r); const left = r.amount - r.paid; return <tr key={r.id} onClick={() => s.go('rent', r.id)}>
           <td><span className="cell"><Avatar name={t?.name} /><b className="strong">{t?.name}</b></span></td><td>{L.prop(t?.property)?.address}{t?.room && <div className="caption">{t.room}</div>}</td><td>{r.due.replace(' 2026', '')}</td><td>{money(r.amount)}</td><td>{money(r.paid)}</td>
@@ -67,14 +69,15 @@ function RentHome() {
           <td>{r.reminders.length ? <span className="stack"><b className="small" style={{ color: 'var(--text-primary)' }}>{r.reminders.length} sent</b><span className="caption">last {r.reminders[0].at.replace(' 2026', '')}</span></span> : <span className="muted">None</span>}</td>
           <td onClick={e => e.stopPropagation()}>{left > 0 && <div className="flex" style={{ justifyContent: 'flex-end' }}><Btn sm kind="ghost" icon={<Bell size={14} />} onClick={() => sendRentReminder(s, L, r.id)}>Remind</Btn><Btn sm onClick={() => setPay(r.id)}>Record</Btn></div>}</td></tr>; })}
       </tbody></table>{!rows.length && <Empty>Nothing here.</Empty>}</div></Card>}
-    {tab === 'payouts' && <Card title="Landlord payouts" sub={`Rent collected, minus the LSP fee and unpaid repair invoices. ${SUPERVISOR} pays landlords on ${PAY_DATE}. You can send the statement.`}>
-      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Homes</th><th>Rent collected</th><th>LSP fee</th><th>Repairs taken off</th><th>To pay</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
+    {tab === 'payouts' && <Card title="Landlord payouts" sub={`Rent collected, minus the LSP fee, VAT on the fee when it is on, and unpaid repair invoices. Homes leased by LSP are not here: their owners get lease payments. ${SUPERVISOR} pays landlords on ${PAY_DATE}. You can send the statement.`}>
+      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Homes</th><th>Rent collected</th><th>LSP fee</th><th>VAT on fee</th><th>Repairs taken off</th><th>To pay</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
         {lls.map(({ l, p }) => <tr key={l.id} onClick={() => setStmt(l.id)}>
           <td><span className="cell"><Avatar name={l.name} /><span className="stack"><b className="strong">{l.name}</b><span className="caption">{l.bank}</span></span></span></td><td>{p.props.length}</td>
-          <td>{money(p.collected)}<div className="caption">of {money(p.due)} due</div></td><td>{money(p.fee)}<div className="caption">{l.plan}%</div></td><td>{p.repairs ? money(p.repairs) : '—'}</td><td><b style={{ fontSize: 14 }}>{money(p.pay)}</b></td>
+          <td>{money(p.collected)}<div className="caption">of {money(p.due)} due</div></td><td>{money(p.fee)}<div className="caption">{l.plan}%</div></td><td>{p.vatOn ? money(p.vat) : <span className="muted">Off</span>}</td><td>{p.repairs ? money(p.repairs) : '—'}</td><td><b style={{ fontSize: 14 }}>{money(p.pay)}</b></td>
           <td><Chip tone={p.status === 'Paid' ? 'ok' : p.status === 'On hold' ? 'warn' : 'info'}>{p.status === 'Scheduled' ? 'Due ' + PAY_DATE.replace(' 2026', '') : p.status}</Chip></td>
           <td onClick={e => e.stopPropagation()}><div className="flex" style={{ justifyContent: 'flex-end' }}><Btn sm kind="ghost" icon={<Send size={14} />} onClick={() => { s.log(`Sent October statement to ${l.name}`, 'Rent & Invoices'); s.toast(`Statement sent to ${l.email}`); }}>Statement</Btn></div></td></tr>)}
       </tbody></table></div></Card>}
+    {tab === 'owners' && <OwnerPayments />}
     {tab === 'invoices' && <Card title="Invoices" sub="Landlord invoices are due straight away. Client invoices use the client's own terms. Click one to see what it's for." action={<Btn sm icon={<Plus size={14} />} onClick={() => s.go('rent', editorLink('invoice'))}>Create invoice</Btn>}><InvoiceTable list={invs} /></Card>}
     {pay && <RecordPay rowId={pay} onClose={() => setPay(null)} />}
     {stmt && <Statement id={stmt} onClose={() => setStmt(null)} />}
@@ -96,7 +99,7 @@ function Statement({ id, onClose }: { id: string; onClose: () => void }) {
   const s = useStore(); const L = useLookups(); const l = s.landlords.find(x => x.id === id)!; const p = payoutFor(s, l);
   return <Drawer title={`October statement · ${l.name}`} sub={`${l.plan}% plan · paid to ${l.bank}`} onClose={onClose} footer={<><Btn kind="outline" icon={<Send size={16} />} onClick={() => { s.toast(`Statement sent to ${l.email}`); s.log(`Sent October statement to ${l.name}`, 'Rent & Invoices'); }}>Email statement</Btn></>}>
     <Card className="flat" title="Rent in"><div className="divlist">{p.rows.map(r => { const t = L.tenant(r.tenant); return <div key={r.id} className="item"><div className="stack grow"><b>{t?.name}</b><span className="caption">{L.prop(t?.property)?.address}{t?.room ? ' · ' + t.room : ''}</span></div><span className="caption">{money(r.paid)} of {money(r.amount)}</span><Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip></div>; })}</div></Card>
-    <Card className="flat"><KV rows={[['Rent collected', money(p.collected)], [`LSP fee (${l.plan}%)`, '− ' + money(p.fee)], ['Unpaid repair invoices', p.repairs ? '− ' + money(p.repairs) : '—'], ['To pay landlord', <b style={{ fontSize: 16 }}>{money(p.pay)}</b>], ['Pay date', PAY_DATE]]} /></Card>
+    <Card className="flat"><KV rows={[['Rent collected', money(p.collected)], [`LSP fee (${l.plan}%)`, '− ' + money(p.fee)], ...(p.vatOn ? [[`VAT on LSP fee (${s.vat.rate}%)`, '− ' + money(p.vat)] as [string, string]] : []), ['Unpaid repair invoices', p.repairs ? '− ' + money(p.repairs) : '—'], ['To pay landlord', <b style={{ fontSize: 16 }}>{money(p.pay)}</b>], ['Pay date', PAY_DATE]]} /></Card>
     {p.bills.length > 0 && <Note>Taken off: {p.bills.map(b => `${b.id} (${money(b.amount - b.paid)})`).join(', ')}.</Note>}
     {p.status === 'On hold' && <Note tone="warn">On hold. Rent from a tenant is still late, so the payout waits.</Note>}
   </Drawer>;
@@ -111,7 +114,7 @@ function RentAccount({ id }: { id: string }) {
     <PageHeader crumbs={crumbsFor('rent', s.go, t.name)} back={() => s.go('rent')} title={`Rent · ${t.name}`}
       action={owed > 0 && <div className="flex"><Btn kind="outline" icon={<Bell size={16} />} onClick={() => sendRentReminder(s, L, id)}>Send reminder</Btn><Btn icon={<PoundSterling size={16} />} onClick={() => setPay(true)}>Record payment</Btn></div>} />
     <DetailHead media={<Avatar name={t.name} size="xl" />} title={t.name} chips={<><Chip tone={st.tone}>{st.label}</Chip><Chip tone="neutral" dot={false}>{t.status} tenant</Chip></>}
-      meta={[['Home', `${p?.address}${t.room ? ' · ' + t.room : ''}`], ['Rent', `${money(t.rent)} on day ${t.rentDay}`], ['Landlord', ll?.name ?? '—'], ['Office Admin', adminName(p?.admin)]]} />
+      meta={[['Home', `${p?.address}${t.room ? ' · ' + t.room : ''}`], ['Rent', `${money(t.rent)} on day ${t.rentDay}`], ['Landlord', isLeased(p) ? LSP_NAME : ll?.name ?? '—'], ['Office Admin', adminName(p?.admin)]]} />
     <div className="grid g4"><Stat label="Due this month" value={money(r.amount)} sub={'on ' + r.due} /><Stat label="Paid" value={money(r.paid)} tone={r.paid >= r.amount ? 'ok' : undefined} /><Stat label="Owed" value={money(owed)} tone={owed ? 'err' : 'ok'} sub={owed ? 'carries forward' : 'nothing owed'} /><Stat label="Reminders" value={r.reminders.length} sub={r.reminders[0] ? 'last ' + r.reminders[0].at : 'none sent'} /></div>
     <div className="dgrid">
       <div className="col">
@@ -126,7 +129,7 @@ function RentAccount({ id }: { id: string }) {
           : <ActionCard tone="ok" title="Paid" text="This month is paid in full." />}
         <Card title="Tenant"><div className="flex"><Avatar name={t.name} size="md" /><div className="stack grow"><b>{t.name}</b><span className="caption">{t.phone}</span></div></div><Btn kind="outline" icon={<ArrowRight size={16} />} onClick={() => s.go('tenants', t.id)}>Open tenant profile</Btn></Card>
         <HomeCard id={t.property} />
-        <Card title="Paid out to"><KV rows={[['Landlord', ll?.name ?? '—'], ['Bank', ll?.bank ?? '—'], ['Payout', PAY_DATE]]} /><Btn kind="ghost" icon={<FileText size={16} />} onClick={() => s.go('rent')}>Landlord payouts</Btn></Card>
+        <Card title={isLeased(p) ? 'Rent goes to LSP' : 'Paid out to'}><KV rows={isLeased(p) ? [['Landlord', LSP_NAME], ['Home', 'Leased by LSP'], ['Owner', `Paid lease rent separately`]] : [['Landlord', ll?.name ?? '—'], ['Bank', ll?.bank ?? '—'], ['Payout', PAY_DATE]]} /><Btn kind="ghost" icon={<FileText size={16} />} onClick={() => s.go('rent')}>Landlord payouts</Btn></Card>
       </div>
     </div>
     {pay && <RecordPay rowId={id} onClose={() => setPay(false)} />}
