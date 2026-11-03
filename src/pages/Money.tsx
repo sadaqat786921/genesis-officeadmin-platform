@@ -3,7 +3,7 @@ import { Landmark, FileText, Download, Upload, CalendarClock, Pencil, Percent, L
 import { useStore, useLookups, money } from '../store';
 import { PLAN, ME_NAME, daysFrom, nowStamp, parseDate, type Landlord, type LeasePay, type Property, type Plan } from '../data';
 import { feeOf, pctText, vatActive, isLeased, LSP_NAME, MAINT_SHARE, type VatSetting } from '../pricing';
-import { Bar, Btn, Card, Chip, Empty, Field, KV, Modal, Note, Stat, Text, Timeline, FilterBar, applyFlt, useFlt, dateLabel } from '../ui';
+import { Bar, Btn, Card, Chip, Empty, Field, KV, Modal, Note, Stat, Text, Timeline, FilterBar, applyFlt, useFlt, dateLabel, yearsOf } from '../ui';
 import { PageHeader } from '../Shell';
 import { PaymentModal } from './shared';
 
@@ -153,7 +153,7 @@ export function LeaseTab({ p }: { p: Property }) {
 export function OwnerPayTable({ list: all, onPay, hideHome }: { list: LeasePay[]; onPay: (id: string) => void; hideHome?: boolean }) {
   const s = useStore(); const L = useLookups(); const [f, setF] = useFlt();
   const list = applyFlt(all, f, { text: x => `${x.month} ${L.prop(x.property)?.address ?? ''} ${L.landlord(L.prop(x.property)?.owner)?.name ?? ''}`, type: x => leaseState(x).label.split(' ·')[0].replace(/ \d.*$/, ''), date: x => x.due });
-  return <>{all.length > 2 && <FilterBar f={f} set={setF} placeholder="Search month, home or owner" types={[...new Set(all.map(x => leaseState(x).label.split(' ·')[0].replace(/ \d.*$/, '')))]} typeLabel="Any status" shown={list.length} total={all.length} />}
+  return <>{all.length > 2 && <FilterBar f={f} set={setF} placeholder="Search month, home or owner" years={yearsOf(all, x => x.due)} types={[...new Set(all.map(x => leaseState(x).label.split(' ·')[0].replace(/ \d.*$/, '')))]} typeLabel="Any status" shown={list.length} total={all.length} />}
     <div className="tablewrap"><table className="t"><thead><tr><th>Month</th>{!hideHome && <th>Home · owner</th>}<th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Paid on · ref</th><th>Status</th><th /></tr></thead><tbody>
       {list.map(x => { const st = leaseState(x); const p = L.prop(x.property); const left = x.amount - x.paid; const last = x.history[x.history.length - 1]; return <tr key={x.id} onClick={() => hideHome ? undefined : s.go('properties', x.property)} className={hideHome ? 'static' : ''}>
         <td><span className="cell"><span className="tile t-brand" style={{ width: 32, height: 32 }}><Landmark size={15} /></span><b className="strong">{x.month}</b></span></td>

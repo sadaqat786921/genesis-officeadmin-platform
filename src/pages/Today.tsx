@@ -4,7 +4,7 @@ import { useStore, useLookups, money, rentStatus, type Route } from '../store';
 import { daysFrom, nowStamp, ME, ME_NAME, SUPERVISOR } from '../data';
 import { Btn, Card, Chip, Drawer, IBtn, KV, Kpi, Note, Tabs } from '../ui';
 import { PageHeader } from '../Shell';
-import { NewJobModal, DONE_JOB } from './shared';
+import { NewJobModal, DONE_JOB, overLimit } from './shared';
 import { remindSupervisor } from './Requests';
 
 type Item = { kind: 'overdue' | 'todo' | 'waiting'; t: string; d: string; next: string; due: string; r: Route; id?: string; tone: 'err' | 'warn' | 'info' | 'brand' | 'ok' };
@@ -34,7 +34,7 @@ export default function Today() {
     ...s.jobs.filter(j => j.status === 'New' && !j.urgent).map(j => ({ kind: 'todo' as const, t: `${j.managed ? 'Price' : 'Quote'} · ${j.title}`, d: L.prop(j.property)?.address ?? '', next: j.managed ? 'Get a price from a contractor' : 'Create the quote for the client', due: j.reported.split(',')[0].replace(' 2026', ''), r: 'jobs' as Route, id: j.id, tone: 'info' as const })),
     ...s.inspections.filter(i => i.status === 'Not assigned').map(i => ({ kind: 'todo' as const, t: `${i.kind} inspection has no inspector`, d: L.prop(i.property)?.address ?? '', next: 'Assign a Site Inspector', due: i.date.replace(' 2026', ''), r: 'inspections' as Route, id: i.id, tone: 'warn' as const })),
     ...s.inspections.filter(i => i.status === 'Report uploaded').map(i => ({ kind: 'todo' as const, t: `Review ${i.kind.toLowerCase()} report`, d: `${L.prop(i.property)?.address}${i.room ? ' · ' + i.room : ''}`, next: 'Accept and lock, or send back', due: 'Now', r: 'inspections' as Route, id: i.id, tone: 'warn' as const })),
-    ...waitingJobs.map(j => ({ kind: 'waiting' as const, t: `${j.title} · ${money(j.price)}`, d: `${L.prop(j.property)?.address} · over the landlord's limit`, next: `Waiting for ${SUPERVISOR} to approve`, due: j.reported.split(',')[0].replace(' 2026', ''), r: 'requests' as Route, id: j.id, tone: 'warn' as const })),
+    ...waitingJobs.map(j => ({ kind: 'waiting' as const, t: `${j.title} · ${money(j.price)}`, d: `${L.prop(j.property)?.address} · ${overLimit(j, L) ? 'over' : 'under'} the landlord's limit`, next: `Waiting for ${SUPERVISOR} to approve`, due: j.reported.split(',')[0].replace(' 2026', ''), r: 'requests' as Route, id: j.id, tone: 'warn' as const })),
     ...reviews.map(a => ({ kind: 'waiting' as const, t: `Supervisor review · ${a.name}`, d: L.prop(a.property)?.address ?? '', next: `Waiting for ${SUPERVISOR} to approve the tenant`, due: a.since.replace(' 2026', ''), r: 'lettings' as Route, id: a.id, tone: 'info' as const })),
     ...asks.map(q => ({ kind: 'waiting' as const, t: q.title, d: q.about, next: `Waiting for ${SUPERVISOR}`, due: q.at.split(',')[0].replace(' 2026', ''), r: 'requests' as Route, id: q.id, tone: 'info' as const })),
   ];
@@ -66,7 +66,7 @@ export default function Today() {
           <div className="stack" style={{ alignItems: 'center' }}><ListChecks size={22} color="#5BAF00" /><b style={{ fontSize: 13 }}>{s.tasks.filter(t => t.done).length} of {s.tasks.length}</b><span style={{ fontSize: 10.5, color: '#AEBBDA' }}>tasks done</span></div></div>
       </div>
       <Card title={`Waiting for ${SUPERVISOR}`} sub="Things only the Supervisor can decide." action={<Chip tone="warn">{waitingJobs.length + reviews.length + asks.length} waiting</Chip>} style={{ width: 400, flex: 'none' }}>
-        {[...waitingJobs.map(j => ({ k: j.id, icon: <Wrench size={18} />, t: j.title, v: money(j.price), d: `${L.prop(j.property)?.address} · over the limit`, go: () => s.go('requests', j.id), what: `approval for ${j.title} (${money(j.price)})` })),
+        {[...waitingJobs.map(j => ({ k: j.id, icon: <Wrench size={18} />, t: j.title, v: money(j.price), d: `${L.prop(j.property)?.address} · ${overLimit(j, L) ? 'over' : 'under'} the limit`, go: () => s.go('requests', j.id), what: `approval for ${j.title} (${money(j.price)})` })),
           ...reviews.map(a => ({ k: a.id, icon: <KeyRound size={18} />, t: a.name, v: 'Review', d: `${L.prop(a.property)?.address}${a.room ? ' · ' + a.room : ''}`, go: () => s.go('lettings', a.id), what: `the tenant review for ${a.name}` })),
           ...asks.map(q => ({ k: q.id, icon: <FileText size={18} />, t: q.title, v: '', d: q.about, go: () => s.go('requests', q.id), what: q.title }))].slice(0, 4).map(x => <div className="lrow" key={x.k}>
           <span className="tile t-white" style={{ width: 36, height: 36 }}>{x.icon}</span>

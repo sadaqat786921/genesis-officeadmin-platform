@@ -4,7 +4,7 @@ import { useStore, useLookups, money, landlordBudget, budgetTone } from '../stor
 import { PLAN, nowStamp, ME, ME_NAME, SUPERVISOR, type Comm, type ReqKind, type SupReq } from '../data';
 import { ActionCard, Avatar, Bar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, KV, Kpi, Modal, Note, PageTabs, Reason, Select, Tabs, Timeline, Empty, Area, Text, When, sortComms } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
-import { HomeCard, adminName, approveJob, jobEvent, jobTone } from './shared';
+import { HomeCard, adminName, approveJob, jobEvent, jobTone, needsLandlord, overLimit } from './shared';
 import { linkLeadLandlord } from './Switch';
 
 type S = ReturnType<typeof useStore>;
@@ -60,7 +60,7 @@ function RequestList() {
   const decidedJobs = s.jobs.filter(j => j.managed && j.events.some(e => e.text.startsWith('Approved by Supervisor') || e.text.startsWith('Declined by Supervisor')));
   const answered = s.requests.filter(r => r.status !== 'Waiting');
   const rows = [
-    ...jobs.map(j => ({ k: j.id, kind: 'Repair approval', title: `${j.title} · ${money(j.price)}`, about: `${L.prop(j.property)?.address} · over ${L.landlord(L.prop(j.property)?.owner)?.name}'s limit${j.landlordOk ? ' · landlord said yes' : ''}`, at: j.events.find(e => e.text.includes('Sent for approval'))?.at ?? j.reported, go: () => s.go('requests', j.id), what: `${j.title} (${money(j.price)})` })),
+    ...jobs.map(j => ({ k: j.id, kind: 'Repair approval', title: `${j.title} · ${money(j.price)}`, about: `${L.prop(j.property)?.address} · ${overLimit(j, L) ? 'over' : 'under'} ${L.landlord(L.prop(j.property)?.owner)?.name}'s limit${j.followOf ? ' · follow-up from contractor' : ''}${j.landlordOk ? ' · landlord said yes' : ''}`, at: [...j.events].reverse().find(e => /sent for (supervisor )?approval/i.test(e.text))?.at ?? j.reported, go: () => s.go('requests', j.id), what: `${j.title} (${money(j.price)})` })),
     ...reviews.map(a => ({ k: a.id, kind: 'Tenant review', title: `Approve tenant · ${a.name}`, about: `${L.prop(a.property)?.address}${a.room ? ' · ' + a.room : ''} · all checks done`, at: a.since, go: () => s.go('lettings', a.id), what: `the tenant review for ${a.name}` })),
     ...asks.map(q => ({ k: q.id, kind: q.kind, title: q.title, about: q.about, at: q.at, go: () => s.go('requests', q.id), what: q.title })),
   ];
@@ -68,12 +68,12 @@ function RequestList() {
   return <>
     <PageHeader crumbs={crumbsFor('requests', s.go)} title="Sent to Supervisor" action={<Btn icon={<Plus size={18} />} onClick={() => setAdd(true)}>New request</Btn>} />
     <div className="grid g4">
-      <Kpi icon={<Wrench size={18} />} tone="warn" label="Repair approvals" value={jobs.length} caption={money(jobs.reduce((a, j) => a + j.price, 0)) + ' over the limits'} onClick={() => setTab('waiting')} active={tab === 'waiting'} />
+      <Kpi icon={<Wrench size={18} />} tone="warn" label="Repair approvals" value={jobs.length} caption={money(jobs.reduce((a, j) => a + j.price, 0)) + ' in total'} onClick={() => setTab('waiting')} active={tab === 'waiting'} />
       <Kpi icon={<KeyRound size={18} />} tone="brand" label="Tenant reviews" value={reviews.length} caption="checks done, waiting" onClick={() => setTab('waiting')} />
       <Kpi icon={<Send size={18} />} tone="info" label="Other requests" value={asks.length} caption="new landlords, unlocks…" onClick={() => setTab('waiting')} />
       <Kpi icon={<CheckCircle2 size={18} />} tone="ok" label="Answered" value={answered.length + decidedJobs.length} caption="see the reply" active={tab === 'answered'} onClick={() => setTab('answered')} />
     </div>
-    <Note>An Office Admin can't approve repairs over a landlord's limit, approve a tenant, create a landlord or unlock a record. Those come here for {SUPERVISOR}. You can prepare everything first: email the landlord, log their reply, and remind the Supervisor.</Note>
+    <Note>An Office Admin can't approve repairs (every managed job goes to the Supervisor, under or over the limit), approve a tenant, create a landlord or unlock a record. Those come here for {SUPERVISOR}. You can prepare everything first: email the landlord, log their reply, and remind the Supervisor.</Note>
     <Tabs value={tab} onChange={setTab} items={[{ id: 'waiting', label: 'Waiting', count: rows.length }, { id: 'answered', label: 'Answered', count: answered.length + decidedJobs.length }, { id: 'budgets', label: 'Maintenance budgets' }]} />
     {tab === 'waiting' && <Card title={`Waiting for ${SUPERVISOR}`} sub="Click a row to see everything about it.">
       <div className="tablewrap"><table className="t"><thead><tr><th>Request</th><th>Type</th><th>Sent</th><th>Status</th><th /></tr></thead><tbody>
@@ -149,8 +149,8 @@ function RepairApproval({ id }: { id: string }) {
     <PageHeader crumbs={crumbsFor('requests', s.go, j.title)} back={() => s.go('requests')} title={`${j.title} · approval`}
       action={waiting && <div className="flex"><Btn kind="outline" icon={<Mail size={16} />} onClick={() => setM('email')}>Email landlord</Btn><Btn icon={<BellRing size={16} />} onClick={() => remindSupervisor(s, `${j.title} (${money(j.price)})`)}>Remind {SUPERVISOR.split(' ')[0]}</Btn></div>} />
     <DetailHead media={<span className="tile t-warn" style={{ width: 64, height: 64, borderRadius: 18 }}><Wrench size={28} /></span>} title={`${j.title} · ${money(j.price)}`}
-      chips={<><Chip tone={jobTone(j.status)}>{waiting ? `Waiting for ${SUPERVISOR}` : j.status}</Chip>{j.landlordOk && <Chip tone="ok">Landlord said yes</Chip>}</>}
-      meta={[['Home', p.address], ['Landlord', `${ll?.name} · ${ll?.plan}% plan`], ['Job limit', money(limit)], ['Over the limit by', money(Math.max(0, j.price - limit))]]} />
+      chips={<><Chip tone={jobTone(j.status)}>{waiting ? `Waiting for ${SUPERVISOR}` : j.status}</Chip>{j.followOf && <Chip tone="brand" dot={false}>Follow-up · from contractor</Chip>}{j.landlordOk && <Chip tone="ok">Landlord said yes</Chip>}</>}
+      meta={[['Home', p.address], ['Landlord', `${ll?.name} · ${ll?.plan}% plan`], ['Job limit', money(limit)], j.price > limit ? ['Over the limit by', money(j.price - limit)] : ['Under the limit by', money(limit - j.price)]]} />
     <PageTabs value={tab} onChange={setTab} items={[{ id: 'details', label: 'Details and budget' }, { id: 'comms', label: 'Communication', count: j.comms.length }]} />
     <div className="dgrid">
       <div className="col">
@@ -161,7 +161,7 @@ function RepairApproval({ id }: { id: string }) {
             <div className="flex wrap" style={{ gap: 14 }}><span className="legend"><i className="lg-u" />Already used</span><span className="legend"><i className="lg-j" />This job</span><span className="legend"><i className="lg-f" />Left</span></div>
             {hit ? <Note tone={hit >= 90 ? 'err' : 'warn'}>If approved, the budget goes from {before}% to {after}%. {ll?.name} gets the {hit}% alert email.</Note> : <Note tone="ok">If approved, the budget goes from {before}% to {after}%. No new alert.</Note>}
           </Card>
-          <Card title="The job"><p style={{ margin: 0, lineHeight: 1.6 }}>{j.note}</p><KV rows={[['Reported by', j.by], ['Reported', j.reported], ['Contractor', c ? `${c.name} · ★ ${c.rating}` : '—'], ['Quote', money(j.price)], ['Contractor cost', money(j.cost) + ' · staff only'], ['Office Admin', adminName(j.admin)]]} />
+          <Card title="The job"><p style={{ margin: 0, lineHeight: 1.6 }}>{j.note}</p><KV rows={[['Reported by', j.by], ['Reported', j.reported], ['Contractor', c ? `${c.name} · ★ ${c.rating}` : '—'], ['Hours', j.hours ? `${j.hours} at ${money(j.rate ?? c?.rate ?? 0)} an hour` : '—'], ['Budget amount', money(j.price)], ['Contractor cost', money(j.cost) + ' · staff only'], ['Office Admin', adminName(j.admin)]]} />
             <Btn kind="ghost" icon={<ArrowRight size={16} />} onClick={() => s.go('jobs', id)}>Open the full job</Btn></Card>
           <Card title="History"><Timeline items={[...j.events].reverse().map(e => ({ at: e.at, text: e.text, by: e.by }))} /></Card>
         </>}
@@ -170,7 +170,7 @@ function RepairApproval({ id }: { id: string }) {
           <CommsLog items={j.comms} to={ll?.email} onAdd={c2 => addComm(c2, 'Saved')} emptyText="No messages with the landlord yet." /></Card>}
       </div>
       <div className="col">
-        {waiting ? <ActionCard tone="warn" title={`Waiting for ${SUPERVISOR}`} text={`${money(j.price)} is ${money(j.price - limit)} over the ${money(limit)} limit. Only the Supervisor can approve it.${j.landlordOk ? ' The landlord has said yes. That is shown to the Supervisor.' : ' Ask the landlord first so the Supervisor can decide quickly.'}`}>
+        {waiting ? <ActionCard tone="warn" title={`Waiting for ${SUPERVISOR}`} text={j.price > limit ? `${money(j.price)} is ${money(j.price - limit)} over the ${money(limit)} limit. Only the Supervisor can approve it.${needsLandlord(j, L) ? ' After that, you send the landlord an invoice to approve before work starts.' : ''}` : `${money(j.price)} is under the ${money(limit)} limit. Every managed job still needs the Supervisor's approval. Then ${c?.name ?? 'the contractor'} gets the job.`}>
           {!j.landlordOk && <Btn block icon={<Mail size={16} />} onClick={() => setM('email')}>Email landlord</Btn>}
           <Btn block kind="outline" icon={<MessageSquareReply size={16} />} onClick={() => setM('reply')}>Log landlord reply</Btn>
           <Btn block kind="ghost" icon={<BellRing size={16} />} onClick={() => remindSupervisor(s, `${j.title} (${money(j.price)})`)}>Remind {SUPERVISOR}</Btn></ActionCard>

@@ -3,7 +3,7 @@ import { PoundSterling, AlertTriangle, Bell, Receipt, Landmark, ArrowRight, File
 import { useStore, useLookups, money, rentStatus, type Lookups } from '../store';
 import { daysFrom, nowStamp, SUPERVISOR, type Landlord } from '../data';
 import { ME_NAME } from '../data';
-import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, Drawer, KV, Kpi, Modal, Note, Stat, Tabs, Timeline, Empty, MiniSearch, FilterBar, applyFlt, useFlt } from '../ui';
+import { ActionCard, Avatar, Btn, Card, Chip, DetailHead, Drawer, KV, Kpi, Modal, Note, Stat, Tabs, Timeline, Empty, MiniSearch, FilterBar, applyFlt, useFlt, yearsOf } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { PaymentModal, adminName, HomeCard } from './shared';
 import { InvoiceTable } from './tables';
@@ -61,7 +61,7 @@ function RentHome() {
     <Tabs value={tab} onChange={setTab} items={[{ id: 'rent', label: 'Tenant rent', count: R.length }, { id: 'payouts', label: 'Landlord payouts', count: lls.length }, { id: 'owners', label: 'Owner lease payments', count: s.leasePays.length }, { id: 'invoices', label: 'Invoices', count: invs.length }]} />
     {tab === 'rent' && <Card title="Rent this month" sub="Staff check the bank and record what arrived. Click a tenant for their full rent account. Part payments carry forward."
       action={<div className="toolbar"><MiniSearch value={q} onChange={setQ} placeholder="Search tenant" />{late.length > 0 && <Btn sm kind="outline" icon={<Bell size={14} />} onClick={() => setBulk(true)}>Remind all late ({late.length})</Btn>}</div>}>
-      <div className="flex between wrap" style={{ gap: 10 }}><Tabs value={f} onChange={setF} items={[{ id: 'all', label: 'All' }, { id: 'late', label: 'Late', count: late.length }, { id: 'part', label: 'Part-paid' }, { id: 'due', label: 'Due soon' }, { id: 'paid', label: 'Paid' }]} /><FilterBar f={rf} set={setRf} search={false} /></div>
+      <div className="flex between wrap" style={{ gap: 10 }}><Tabs value={f} onChange={setF} items={[{ id: 'all', label: 'All' }, { id: 'late', label: 'Late', count: late.length }, { id: 'part', label: 'Part-paid' }, { id: 'due', label: 'Due soon' }, { id: 'paid', label: 'Paid' }]} /><FilterBar f={rf} set={setRf} search={false} years={yearsOf(R, r => r.due)} /></div>
       <div className="tablewrap"><table className="t"><thead><tr><th>Tenant</th><th>Home</th><th>Due</th><th>Rent</th><th>Paid</th><th>Owed</th><th>Status</th><th>Reminders</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
         {rows.map(r => { const t = L.tenant(r.tenant); const st = rentStatus(r); const left = r.amount - r.paid; return <tr key={r.id} onClick={() => s.go('rent', r.id)}>
           <td><span className="cell"><Avatar name={t?.name} /><b className="strong">{t?.name}</b></span></td><td>{L.prop(t?.property)?.address}{t?.room && <div className="caption">{t.room}</div>}</td><td>{r.due.replace(' 2026', '')}</td><td>{money(r.amount)}</td><td>{money(r.paid)}</td>

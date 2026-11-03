@@ -3,7 +3,7 @@ import { Wrench, ShieldCheck, ClipboardCheck, PoundSterling, Users, Home, Receip
 import { useStore, useLookups, money, rentStatus } from '../store';
 import { parseDate, PLAN, type Property, type Tone } from '../data';
 import { ME_NAME } from '../data';
-import { Btn, Card, Chip, Empty, Stat, Tabs, Note, FilterBar, applyFlt, useFlt } from '../ui';
+import { Btn, Card, Chip, Empty, Stat, Tabs, Note, FilterBar, applyFlt, useFlt, yearsOf } from '../ui';
 import { feeOf, isLeased, LSP_NAME } from '../pricing';
 import { OwnerPayTable, payOwner } from './Money';
 import { PaymentModal } from './shared';
@@ -58,7 +58,7 @@ export function PropertyHistory({ p }: { p: Property }) {
   return <Card title="Full history" sub={`Everything at ${p.address} from ${first?.at.split(',')[0] ?? p.added} to today, with the date and time. Nothing is deleted. When a document is replaced, the earlier version stays here.`}
     action={<Btn sm kind="outline" icon={<Download size={14} />} onClick={() => { s.log(`Downloaded full history for ${p.address}`, 'Properties'); downloadPdf(s, `History · ${p.address}`); }}>Download history</Btn>}>
     <Tabs value={f} onChange={setF} items={[{ id: 'all' as const, label: 'All', count: all.length }, ...kinds.map(k => ({ id: k, label: k, count: all.filter(x => x.kind === k).length }))]} />
-    <FilterBar f={hf} set={setHf} placeholder="Search history" shown={list.length} total={all.length} />
+    <FilterBar f={hf} set={setHf} placeholder="Search history" years={yearsOf(all, x => x.at)} shown={list.length} total={all.length} />
     {list.length ? <div className="hlist">{list.map((x, i) => { const [ic, tone] = ICON[x.kind]; return <div key={i} className={`hrow${x.go ? ' click' : ''}`} onClick={x.go} role={x.go ? 'button' : undefined}>
       <span className={`tile ${tone}`} style={{ width: 32, height: 32 }}>{ic}</span>
       <div className="stack grow" style={{ gap: 3 }}><span className="htext">{x.text}</span><span className="caption">{x.at}{x.by ? ' · ' + x.by : ''} · {x.kind}</span></div>
@@ -109,7 +109,7 @@ function ManagedMoney({ p }: { p: Property }) {
     </Card>
     <div className="grid g2">
       <Card title="What the tenant paid" sub="Every payment that arrived in the bank, with the date." action={rows[0] && <Btn sm kind="ghost" icon={<Eye size={14} />} onClick={() => s.go('rent', rows[0].id)}>Rent account</Btn>}>
-        <FilterBar f={pf} set={setPf} search={false} />
+        <FilterBar f={pf} set={setPf} search={false} years={yearsOf(payments, x => x.date)} />
         {payments.length ? <div className="divlist">{applyFlt(payments, pf, { text: x => x.who, date: x => x.date }).map((x, i) => <div key={i} className="item"><span className="tile t-ok" style={{ width: 32, height: 32 }}><PoundSterling size={15} /></span><div className="stack grow"><b>{money(x.amount)} · {x.who}</b><span className="caption">{x.date} · for {x.month} · {x.note}</span></div></div>)}</div> : <Empty icon={<PoundSterling size={22} />}>No payments yet.</Empty>}
         {rows.map(r => <div key={r.id} className="flex between" style={{ marginTop: 4 }}><span className="small">{L.tenant(r.tenant)?.name} · {r.month}</span><Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip></div>)}
       </Card>

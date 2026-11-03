@@ -91,7 +91,8 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
     if (!send) { if (job) { jobEvent(s, job.id, 'Invoice draft saved', { lines }, ME_NAME); s.toast('Invoice draft saved'); back(); } return; }
     const inv: Invoice = { id: no, to: cust, toKind: c!.kind, job: job?.id, amount: gross, vat: vatAmt || undefined, vatRate: va ? s.vat.rate : undefined, vatNo: va ? s.vat.number : undefined, paid: 0, terms: terms === 'Due on receipt' ? 'Straight away' : terms.replace('Net ', '') + ' days', issued: fromInput(date), due, overdue: false, site: siteLabel, note, memo, attachments: files.map(f => f.name), billTo, items: lines.map(l => ({ code: l.code, activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: r2(l.qty * l.rate) })) };
     s.setInvoices(is => [inv, ...is]);
-    if (job) jobEvent(s, job.id, `Invoice ${no} sent to ${c?.name}`, { status: 'Invoiced', invoice: no, lines, comms: [...job.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: mail?.subject, text: `Invoice ${no} for ${money(total)} sent with the PDF attached.` }] }, ME_NAME);
+    const ask = job?.status === 'Landlord approval';
+    if (job) jobEvent(s, job.id, ask ? `Invoice ${no} sent to ${c?.name} to approve before work starts` : `Invoice ${no} sent to ${c?.name}`, { ...(ask ? { landlordAsk: nowStamp() } : { status: 'Invoiced' as const }), invoice: no, lines, comms: [...job.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: mail?.subject, text: `Invoice ${no} for ${money(total)} sent with the PDF attached.` }] }, ME_NAME);
     s.log(`Sent invoice ${no} (${money(gross)}) to ${c?.name}`, 'Rent & Invoices'); s.toast(`Invoice ${no} sent to ${mail?.to}`);
     back();
   };

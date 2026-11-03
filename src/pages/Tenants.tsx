@@ -110,7 +110,7 @@ function TenantPage({ id }: { id: string }) {
 
     {tab === 'rent' && <div className="dgrid">
       <Card title="Rent history" sub="Every month with what was due and what came in.">
-        <FilterBar f={rf} set={setRf} placeholder="Search month" types={['Paid', 'Part-paid', 'Late', 'Due']} typeLabel="Any status" />
+        <FilterBar f={rf} set={setRf} placeholder="Search month" years={yearsOf(rentLedger(t, row), r => r.due)} types={['Paid', 'Part-paid', 'Late', 'Due']} typeLabel="Any status" />
         <div className="tablewrap"><table className="t"><thead><tr><th>Month</th><th>Due</th><th>Rent</th><th>Paid</th><th>Paid on</th><th>Status</th></tr></thead><tbody>
           {applyFlt(rentLedger(t, row), rf, { text: r => `${r.month} ${r.label}`, type: r => r.label.startsWith('Part') ? 'Part-paid' : r.label.startsWith('Late') ? 'Late' : r.label === 'Paid' ? 'Paid' : 'Due', date: r => r.due }).map(r => <tr key={r.month} style={{ cursor: 'default' }}><td className="strong">{r.month}{r.current && <div className="caption">This month</div>}</td><td>{r.due}</td><td>{money(r.amount)}</td><td>{money(r.paid)}</td><td>{r.on}</td><td><Chip tone={r.tone}>{r.label}</Chip></td></tr>)}
         </tbody></table></div>

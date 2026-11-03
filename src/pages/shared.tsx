@@ -3,8 +3,8 @@ import { Search, Check, Mail, Home, ArrowRight, Phone } from 'lucide-react';
 import { useStore, useLookups, money, staff, type Lookups, type Route } from '../store';
 import { INSP_KINDS, PLAN, nowStamp, type InspKind, type InspScope, type Job, type JobEvent, type Line, type Plan, type Property } from '../data';
 import { ME, ME_NAME, SUPERVISOR } from '../data';
-import { Btn, Chip, Field, Modal, Note, Select, Text, Area, Avatar, PhotoPicker, dateLabel } from '../ui';
-import { yearlyBudget, MAINT_SHARE, LSP_NAME, vatActive } from '../pricing';
+import { Btn, Chip, Field, Modal, Note, Select, Text, Area, Avatar, PhotoPicker, MiniSearch, dateLabel } from '../ui';
+import { yearlyBudget, MAINT_SHARE, LSP_NAME, vatActive, isLeased } from '../pricing';
 
 type S = ReturnType<typeof useStore>;
 
@@ -13,16 +13,23 @@ export const firstName = (n?: string) => (n ?? '').split(' ')[0];
 
 /* ---------- jobs ---------- */
 export const DONE_JOB = ['Approved', 'Invoiced', 'Declined'];
-export const jobTone = (st: Job['status']) => ({ New: 'info', 'Quote sent': 'brand', 'Quote accepted': 'brand', 'Waiting approval': 'warn', 'Ready to assign': 'info', Assigned: 'info', 'In progress': 'brand', 'Proof uploaded': 'warn', 'Sent back': 'err', Approved: 'ok', Invoiced: 'ok', Declined: 'neutral' } as const)[st];
-export const MANAGED_STEPS = ['Reported', 'Priced and approved', 'Contractor assigned', 'Work in progress', 'Photo proof', 'Work approved', 'Invoiced'];
+export const jobTone = (st: Job['status']) => ({ New: 'info', 'Quote sent': 'brand', 'Quote accepted': 'brand', 'Waiting approval': 'warn', 'Landlord approval': 'warn', 'Ready to assign': 'info', Assigned: 'info', 'In progress': 'brand', 'Proof uploaded': 'warn', 'Sent back': 'err', Approved: 'ok', Invoiced: 'ok', Declined: 'neutral' } as const)[st];
+/** Managed homes. Every job goes to the Supervisor. Over the landlord's limit, the landlord also approves an invoice before work starts. */
+export const MANAGED_STEPS = ['Reported', 'Priced', 'Supervisor approval', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
+export const MANAGED_STEPS_LL = ['Reported', 'Priced', 'Supervisor approval', 'Landlord approval', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
+/** The landlord's job limit for this job's home (0 for client homes). */
+export const jobLimit = (j: Job, L: Lookups) => { const p = L.prop(j.property); const ll = p?.managed ? L.landlord(p.owner) : undefined; return ll ? PLAN[ll.plan].limit : 0; };
+export const overLimit = (j: Job, L: Lookups) => j.managed && j.price > jobLimit(j, L);
+/** Over the limit on a landlord's home: after the Supervisor approves, the landlord approves an invoice before any work starts. Homes leased by LSP skip this. */
+export const needsLandlord = (j: Job, L: Lookups) => overLimit(j, L) && !isLeased(L.prop(j.property));
 export const CLIENT_STEPS = ['Requested', 'Quote sent', 'Quote accepted', 'Contractor assigned', 'Work in progress', 'Photo proof', 'Work approved', 'Invoiced'];
-export function jobStepAt(j: Job) {
-  if (j.managed) return ({ New: 1, 'Waiting approval': 1, 'Ready to assign': 2, Assigned: 3, 'In progress': 4, 'Sent back': 4, 'Proof uploaded': 5, Approved: 6, Invoiced: 7, Declined: 1, 'Quote sent': 1, 'Quote accepted': 2 } as Record<string, number>)[j.status];
+export function jobStepAt(j: Job, landlordStep = false) {
+  if (j.managed) { const v = ({ New: 1, 'Waiting approval': 2, 'Landlord approval': 3, 'Ready to assign': 3, Assigned: 3, 'In progress': 3, 'Sent back': 3, 'Proof uploaded': 5, Approved: 6, Invoiced: 7, Declined: 1, 'Quote sent': 1, 'Quote accepted': 2 } as Record<string, number>)[j.status]; return landlordStep && v >= 3 && j.status !== 'Landlord approval' ? v + 1 : v; }
   return ({ New: 1, 'Quote sent': 2, 'Quote accepted': 3, 'Ready to assign': 3, Assigned: 4, 'In progress': 5, 'Sent back': 5, 'Proof uploaded': 6, Approved: 7, Invoiced: 8, Declined: 2, 'Waiting approval': 1 } as Record<string, number>)[j.status];
 }
 export const jobProgress = (j: Job) => Math.round(jobStepAt(j) / (j.managed ? 7 : 8) * 100);
 export function nextJobAction(j: Job): string {
-  return ({ New: j.managed ? 'Price the job' : 'Send a quote', 'Quote sent': 'Waiting for the client', 'Quote accepted': 'Assign the contractor', 'Waiting approval': 'Approve or decline', 'Ready to assign': 'Assign a contractor', Assigned: 'Contractor to start', 'In progress': 'Waiting for photo proof', 'Proof uploaded': 'Check the photos', 'Sent back': 'Contractor fixing it', Approved: 'Send the invoice', Invoiced: 'Done', Declined: 'Not going ahead' } as Record<string, string>)[j.status];
+  return ({ New: j.managed ? 'Price the job' : 'Send a quote', 'Quote sent': 'Waiting for the client', 'Quote accepted': 'Assign the contractor', 'Waiting approval': 'Approve or decline', 'Landlord approval': 'Waiting for the landlord', 'Ready to assign': 'Assign a contractor', Assigned: 'Contractor to start', 'In progress': 'Waiting for photo proof', 'Proof uploaded': j.managed ? 'Check photos and invoice' : 'Check the photos', 'Sent back': 'Contractor fixing it', Approved: 'Send the invoice', Invoiced: 'Done', Declined: 'Not going ahead' } as Record<string, string>)[j.status];
 }
 export function jobEvent(s: S, id: string, text: string, patch: Partial<Job> = {}, by = ME_NAME) {
   const e: JobEvent = { at: nowStamp(), by, text };
@@ -43,7 +50,8 @@ export function approveJob(s: S, j: Job, L: Lookups) {
     }
     s.setProperties(ps => ps.map(x => x.id === p.id ? { ...x, used: x.used + j.price } : x));
   }
-  jobEvent(s, j.id, `Approved by Supervisor. ${money(j.price)} taken from the repair budget.`, { status: j.contractor ? 'Assigned' : 'Ready to assign' }, SUPERVISOR);
+  const nl = needsLandlord(j, L); const cn = L.contractor(j.contractor)?.name;
+  jobEvent(s, j.id, `Approved by Supervisor. ${money(j.price)} taken from the repair budget.${nl ? ` Next, ${L.landlord(p?.owner)?.name} approves the invoice before work starts.` : cn ? ` ${cn} has the job.` : ''}`, { status: nl ? 'Landlord approval' : j.contractor ? 'Assigned' : 'Ready to assign' }, SUPERVISOR);
   s.log(`${SUPERVISOR} approved ${j.title} at ${p?.address} (${money(j.price)})`, 'Sent to Supervisor');
   s.toast(`${SUPERVISOR} approved ${j.title}. ${money(j.price)} taken from the budget once.${alert}`);
 }
@@ -68,9 +76,12 @@ export function sendJobInvoice(s: S, j: Job, L: Lookups) {
 export function lockJob(s: S, j: Job, L: Lookups) {
   const p = L.prop(j.property);
   s.setLocked(ls => [{ id: 'LR' + Date.now(), kind: 'Finished job', title: `${j.title} · ${p?.address}`, locked: nowStamp(), by: ME_NAME, versions: [] }, ...ls]);
-  jobEvent(s, j.id, 'Work approved. Record locked.', { status: 'Approved' });
-  s.log(`Approved finished work: ${j.title} at ${p?.address}. Record locked.`, 'Jobs');
-  s.toast('Work approved and record locked. Now send the invoice.');
+  const ci = j.managed ? j.cInvoice : undefined; const cn = L.contractor(j.contractor)?.name;
+  if (ci && j.contractor) s.setContractors(cs => cs.map(c => c.id === j.contractor && !c.bills.some(b => b.id === ci.no) ? { ...c, bills: [{ id: ci.no, job: j.id, amount: ci.amount, date: nowStamp().split(',')[0], status: 'Unpaid' as const }, ...c.bills] } : c));
+  const paid = ci ? ` ${cn}'s invoice ${ci.no} (${money(ci.amount)}) approved for payment.` : '';
+  jobEvent(s, j.id, 'Work approved. Record locked.' + paid, { status: 'Approved' });
+  s.log(`Approved finished work: ${j.title} at ${p?.address}. Record locked.${paid}`, 'Jobs');
+  s.toast(ci ? `Work approved and locked. ${cn}'s invoice is approved for payment.` : 'Work approved and record locked. Now send the invoice.');
 }
 
 /* ---------- modals ---------- */
@@ -199,18 +210,26 @@ export function PaymentModal({ title, owed, onClose, onSave }: { title: string; 
   </Modal>;
 }
 
-export function AssignContractorModal({ title, onClose, onPick, inspector, trade }: { title: string; onClose: () => void; onPick: (id: string) => void; inspector?: boolean; trade?: string }) {
-  const s = useStore();
-  const [sel, setSel] = useState('');
-  const list = s.contractors.filter(c => c.status !== 'Removed' && (trade ? c.trade.toLowerCase().includes(trade.toLowerCase()) : inspector ? c.type === 'Site Inspector' : c.type === 'Trade'));
-  return <Modal title={title} sub="Only approved contractors with documents in date can be chosen." onClose={onClose}
-    footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn disabled={!sel} onClick={() => onPick(sel)}>Assign</Btn></>}>
-    <div className="col" style={{ gap: 8 }}>{list.map(c => { const bad = c.status !== 'Active' || c.kyc.some(x => x.status === 'Expired'); return (
-      <button key={c.id} disabled={bad} className={`choice${sel === c.id ? ' on' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, opacity: bad ? .6 : 1, cursor: bad ? 'not-allowed' : 'pointer' }} onClick={() => setSel(c.id)}>
-        <Avatar name={c.name} /><div className="stack grow"><b>{c.name}</b><span className="caption">{c.trade} · {c.pastJobs} jobs · ★ {c.rating}</span></div>
+/** Search box and list of contractors. Paused contractors or ones with an expired document can't be chosen. Shows each one's hourly rate. */
+export function ContractorSearch({ value, onPick, inspector, trade }: { value?: string; onPick: (id: string) => void; inspector?: boolean; trade?: string }) {
+  const s = useStore(); const [q, setQ] = useState('');
+  const list = s.contractors.filter(c => c.status !== 'Removed' && (trade ? c.trade.toLowerCase().includes(trade.toLowerCase()) : inspector ? c.type === 'Site Inspector' : c.type === 'Trade') && `${c.name} ${c.trade}`.toLowerCase().includes(q.trim().toLowerCase()));
+  return <div className="col" style={{ gap: 8 }}>
+    <MiniSearch value={q} onChange={setQ} placeholder="Search contractor by name or trade" />
+    {list.map(c => { const bad = c.status !== 'Active' || c.kyc.some(x => x.status === 'Expired'); return (
+      <button key={c.id} type="button" disabled={bad} className={`choice${value === c.id ? ' on' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, opacity: bad ? .6 : 1, cursor: bad ? 'not-allowed' : 'pointer' }} onClick={() => onPick(c.id)}>
+        <Avatar name={c.name} /><div className="stack grow"><b>{c.name}</b><span className="caption">{c.trade} · {money(c.rate)} an hour · {c.pastJobs} jobs · ★ {c.rating}</span></div>
         {bad ? <Chip tone="err">Paused · {c.reason ?? 'document expired'}</Chip> : <Chip tone="ok">Documents in date</Chip>}
       </button>); })}
-      {!list.length && <Note>No contractor for this trade yet.</Note>}</div>
+    {!list.length && <Note>{q.trim() ? 'No contractor matches that search.' : 'No contractor for this trade yet.'}</Note>}
+  </div>;
+}
+
+export function AssignContractorModal({ title, onClose, onPick, inspector, trade }: { title: string; onClose: () => void; onPick: (id: string) => void; inspector?: boolean; trade?: string }) {
+  const [sel, setSel] = useState('');
+  return <Modal title={title} sub="Only approved contractors with documents in date can be chosen." onClose={onClose}
+    footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn disabled={!sel} onClick={() => onPick(sel)}>Assign</Btn></>}>
+    <ContractorSearch value={sel} onPick={setSel} inspector={inspector} trade={trade} />
   </Modal>;
 }
 
