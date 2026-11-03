@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, Minus, Maximize2, Minimize2, ChevronUp, Search, Check, Info, AlertTriangle, PhoneCall, Mail, StickyNote, Globe, Bot, MessageSquare, FileText, Upload, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { X, Search, Check, Info, AlertTriangle, PhoneCall, Mail, StickyNote, Globe, Bot, MessageSquare, FileText, Upload, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { nowStamp, parseDate, fmtDate, MONTHS, type Comm, type DocStatus, type Tone } from './data';
 import { ME_NAME } from './data';
 import { staff, useStore } from './store';
@@ -54,68 +54,28 @@ export function MiniSearch({ value, onChange, placeholder = 'Search' }: { value:
   return <label className="minisearch"><Search size={16} strokeWidth={1.8} /><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} /></label>;
 }
 
-/* ---------- pop-up window controls: minimise to a bar at the bottom, expand to a big view ---------- */
-let dockIds: number[] = []; let dockSeq = 0; const dockSubs = new Set<() => void>();
-/** Gives each minimised pop-up its own place in the bottom bar. */
-function useDock(on: boolean) {
-  const id = useRef(0); if (!id.current) id.current = ++dockSeq;
-  const [, tick] = useState(0);
-  useEffect(() => { const f = () => tick(t => t + 1); dockSubs.add(f); return () => { dockSubs.delete(f); }; }, []);
-  useEffect(() => {
-    if (!on) return;
-    dockIds = [...dockIds, id.current]; dockSubs.forEach(f => f());
-    return () => { dockIds = dockIds.filter(x => x !== id.current); dockSubs.forEach(f => f()); };
-  }, [on]);
-  return Math.max(0, dockIds.indexOf(id.current));
-}
-function PopCtl({ max, setMax, setMin, onClose }: { max: boolean; setMax: (v: boolean) => void; setMin: (v: boolean) => void; onClose: () => void }) {
-  return <div className="popctl">
-    <IBtn sm icon={<Minus size={16} />} onClick={() => setMin(true)} label="Minimise" />
-    <IBtn sm icon={max ? <Minimize2 size={15} /> : <Maximize2 size={15} />} onClick={() => setMax(!max)} label={max ? 'Exit full view' : 'Expand'} />
-    <IBtn sm icon={<X size={16} />} onClick={onClose} label="Close" />
-  </div>;
-}
-function PopDock({ title, sub, at, onOpen, onClose }: { title: ReactNode; sub?: ReactNode; at: number; onOpen: () => void; onClose: () => void }) {
-  return <div className="popdock" style={{ right: 24 + at * 332 }} role="dialog" aria-label={(typeof title === 'string' ? title : 'Pop-up') + ' (minimised)'}>
-    <button type="button" className="popdock-t" onClick={onOpen} title="Open again">
-      <span className="popdock-n">{title}</span>
-      <span className="caption">{sub && typeof sub === 'string' ? sub : 'Minimised · click to open'}</span>
-    </button>
-    <IBtn sm icon={<ChevronUp size={16} />} onClick={onOpen} label="Open again" />
-    <IBtn sm icon={<X size={16} />} onClick={onClose} label="Close" />
-  </div>;
-}
-function usePop(onClose: () => void) {
-  const [min, setMin] = useState(false); const [max, setMax] = useState(false);
-  const at = useDock(min);
-  useEffect(() => { if (min) return; const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose, min]);
-  return { min, setMin, max, setMax, at };
-}
-
 export function Drawer({ title, sub, onClose, children, footer, icon }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; icon?: ReactNode }) {
-  const p = usePop(onClose);
+  useEffect(() => { const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
   return (
-    <div className={`scrim${p.min ? ' popmin' : ''}`} onMouseDown={e => !p.min && e.target === e.currentTarget && onClose()}>
-      <aside className={`drawer${p.max ? ' popmax' : ''}`} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} style={p.min ? { display: 'none' } : undefined}>
-        <div className="drawer-h">{icon}<div className="grow"><h2 className="h2" style={{ fontSize: 18 }}>{title}</h2>{sub && <div className="small" style={{ marginTop: 4 }}>{sub}</div>}</div><PopCtl max={p.max} setMax={p.setMax} setMin={p.setMin} onClose={onClose} /></div>
+    <div className="scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <aside className="drawer" role="dialog" aria-label={typeof title === 'string' ? title : 'Details'}>
+        <div className="drawer-h">{icon}<div className="grow"><h2 className="h2" style={{ fontSize: 18 }}>{title}</h2>{sub && <div className="small" style={{ marginTop: 4 }}>{sub}</div>}</div><IBtn sm icon={<X size={16} />} onClick={onClose} label="Close" /></div>
         <div className="drawer-b">{children}</div>
         {footer && <div className="drawer-f">{footer}</div>}
       </aside>
-      {p.min && <PopDock title={title} sub={sub} at={p.at} onOpen={() => p.setMin(false)} onClose={onClose} />}
     </div>
   );
 }
 
 export function Modal({ title, sub, onClose, children, footer, wide }: { title: string; sub?: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
-  const p = usePop(onClose);
+  useEffect(() => { const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
   return (
-    <div className={`modal-scrim${p.min ? ' popmin' : ''}`} onMouseDown={e => !p.min && e.target === e.currentTarget && onClose()}>
-      <div className={`modal${wide ? ' wide' : ''}${p.max ? ' popmax' : ''}`} role="dialog" aria-label={title} style={p.min ? { display: 'none' } : undefined}>
-        <div className="flex" style={{ alignItems: 'flex-start' }}><div className="grow"><h2 className="h2" style={{ fontSize: 18 }}>{title}</h2>{sub && <div className="small" style={{ marginTop: 4 }}>{sub}</div>}</div><PopCtl max={p.max} setMax={p.setMax} setMin={p.setMin} onClose={onClose} /></div>
+    <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-label={title}>
+        <div className="flex" style={{ alignItems: 'flex-start' }}><div className="grow"><h2 className="h2" style={{ fontSize: 18 }}>{title}</h2>{sub && <div className="small" style={{ marginTop: 4 }}>{sub}</div>}</div><IBtn sm icon={<X size={16} />} onClick={onClose} label="Close" /></div>
         {children}
         {footer && <div className="flex" style={{ justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>{footer}</div>}
       </div>
-      {p.min && <PopDock title={title} sub={sub} at={p.at} onOpen={() => p.setMin(false)} onClose={onClose} />}
     </div>
   );
 }

@@ -952,13 +952,3 @@ tr.static { cursor: default; } tr.static:hover td { background: none; }
 .lp-plans.four .lp-plan { padding-left: 22px; padding-right: 22px; }
 @media (max-width: 1180px) { .lp-plans.four { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .lp-plans.four { grid-template-columns: 1fr; } }
-
-/* ---------- pop-up controls: minimise and expand ---------- */
-.popctl { display: flex; gap: 6px; flex: none; }
-.scrim.popmin, .modal-scrim.popmin { background: transparent; pointer-events: none; animation: none; }
-.popdock { position: fixed; bottom: 16px; width: 320px; z-index: 70; pointer-events: auto; display: flex; align-items: center; gap: 6px; padding: 10px 10px 10px 16px; background: #fff; border: 1px solid var(--border-default); border-top: 3px solid var(--border-brand); border-radius: 14px; box-shadow: var(--sh-raised); animation: fade .15s; }
-.popdock-t { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; color: inherit; }
-.popdock-n { font-size: 13px; font-weight: 700; color: var(--text-primary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.popdock-t .caption { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.modal-scrim > .modal.popmax { width: min(1120px, calc(100vw - 40px)) !important; min-height: min(560px, calc(100vh - 40px)); }
-.scrim > .drawer.popmax { width: max(min(560px, 100%), calc(100% - 288px)); }
