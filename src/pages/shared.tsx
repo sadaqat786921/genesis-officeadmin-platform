@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Search, Check, Mail, Home, ArrowRight, Phone } from 'lucide-react';
 import { useStore, useLookups, money, staff, type Lookups, type Route } from '../store';
-import { INSP_KINDS, PLAN, nowStamp, type InspKind, type InspScope, type Job, type JobEvent, type Line, type Plan, type Property } from '../data';
-import { ME, ME_NAME, SUPERVISOR } from '../data';
+import { ME, ME_NAME, SUPERVISOR, PORTAL, INSP_KINDS, PLAN, nowStamp, type InspKind, type InspScope, type Job, type JobEvent, type Line, type Plan, type Property } from '../data';
 import { Btn, Chip, Field, Modal, Note, Select, Text, Area, Avatar, PhotoPicker, MiniSearch, dateLabel } from '../ui';
 import { yearlyBudget, MAINT_SHARE, LSP_NAME, vatActive, isLeased } from '../pricing';
 
@@ -14,14 +13,20 @@ export const firstName = (n?: string) => (n ?? '').split(' ')[0];
 /* ---------- jobs ---------- */
 export const DONE_JOB = ['Approved', 'Invoiced', 'Declined'];
 export const jobTone = (st: Job['status']) => ({ New: 'info', 'Quote sent': 'brand', 'Quote accepted': 'brand', 'Waiting approval': 'warn', 'Landlord approval': 'warn', 'Ready to assign': 'info', Assigned: 'info', 'In progress': 'brand', 'Proof uploaded': 'warn', 'Sent back': 'err', Approved: 'ok', Invoiced: 'ok', Declined: 'neutral' } as const)[st];
-/** Managed homes. Every job goes to the Supervisor. Over the landlord's limit, the landlord also approves an invoice before work starts. */
+/** Managed homes, under the landlord's job limit: the Office Admin approves it and gives it to the contractor. No Supervisor approval. */
+export const OA_STEPS = ['Reported', 'Priced', 'Approved by Office Admin', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
+/** Over the limit: the Supervisor decides. Managed under the plan, the budget pays and work starts. */
 export const MANAGED_STEPS = ['Reported', 'Priced', 'Supervisor approval', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
-export const MANAGED_STEPS_LL = ['Reported', 'Priced', 'Supervisor approval', 'Landlord approval', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
+/** Over the limit and sent to the landlord: the Office Admin sends the landlord a quote to approve before any work starts. */
+export const MANAGED_STEPS_LL = ['Reported', 'Priced', 'Supervisor approval', 'Landlord quote', 'Work in progress', 'Photo proof and invoice', 'Work approved', 'Invoiced'];
 /** The landlord's job limit for this job's home (0 for client homes). */
 export const jobLimit = (j: Job, L: Lookups) => { const p = L.prop(j.property); const ll = p?.managed ? L.landlord(p.owner) : undefined; return ll ? PLAN[ll.plan].limit : 0; };
 export const overLimit = (j: Job, L: Lookups) => j.managed && j.price > jobLimit(j, L);
-/** Over the limit on a landlord's home: after the Supervisor approves, the landlord approves an invoice before any work starts. Homes leased by LSP skip this. */
-export const needsLandlord = (j: Job, L: Lookups) => overLimit(j, L) && !isLeased(L.prop(j.property));
+/** The Supervisor sent it to the landlord: a quote goes to the landlord before any work starts. */
+export const needsLandlord = (j: Job, _L?: Lookups) => j.approval === 'Landlord' || j.status === 'Landlord approval';
+/** Only homes a landlord owns can be sent to the landlord. Homes leased by LSP are decided by the Supervisor alone. */
+export const canAskLandlord = (j: Job, L: Lookups) => { const p = L.prop(j.property); return !!p?.managed && !isLeased(p) && !!L.landlord(p.owner); };
+export const jobSteps = (j: Job, L: Lookups) => !j.managed ? CLIENT_STEPS : needsLandlord(j) ? MANAGED_STEPS_LL : j.approval === 'Under plan' || (j.approval !== 'Office Admin' && overLimit(j, L)) ? MANAGED_STEPS : OA_STEPS;
 export const CLIENT_STEPS = ['Requested', 'Quote sent', 'Quote accepted', 'Contractor assigned', 'Work in progress', 'Photo proof', 'Work approved', 'Invoiced'];
 export function jobStepAt(j: Job, landlordStep = false) {
   if (j.managed) { const v = ({ New: 1, 'Waiting approval': 2, 'Landlord approval': 3, 'Ready to assign': 3, Assigned: 3, 'In progress': 3, 'Sent back': 3, 'Proof uploaded': 5, Approved: 6, Invoiced: 7, Declined: 1, 'Quote sent': 1, 'Quote accepted': 2 } as Record<string, number>)[j.status]; return landlordStep && v >= 3 && j.status !== 'Landlord approval' ? v + 1 : v; }
@@ -29,31 +34,57 @@ export function jobStepAt(j: Job, landlordStep = false) {
 }
 export const jobProgress = (j: Job) => Math.round(jobStepAt(j) / (j.managed ? 7 : 8) * 100);
 export function nextJobAction(j: Job): string {
-  return ({ New: j.managed ? 'Price the job' : 'Send a quote', 'Quote sent': 'Waiting for the client', 'Quote accepted': 'Assign the contractor', 'Waiting approval': 'Approve or decline', 'Landlord approval': 'Waiting for the landlord', 'Ready to assign': 'Assign a contractor', Assigned: 'Contractor to start', 'In progress': 'Waiting for photo proof', 'Proof uploaded': j.managed ? 'Check photos and invoice' : 'Check the photos', 'Sent back': 'Contractor fixing it', Approved: 'Send the invoice', Invoiced: 'Done', Declined: 'Not going ahead' } as Record<string, string>)[j.status];
+  return ({ New: j.managed ? 'Price and approve' : 'Send a quote', 'Quote sent': 'Waiting for the client', 'Quote accepted': 'Assign the contractor', 'Waiting approval': 'Supervisor to decide', 'Landlord approval': j.landlordAsk ? 'Waiting for the landlord' : 'Send the landlord a quote', 'Ready to assign': 'Assign a contractor', Assigned: 'Contractor to start', 'In progress': 'Waiting for photo proof', 'Proof uploaded': j.managed ? 'Check photos and invoice' : 'Check the photos', 'Sent back': 'Contractor fixing it', Approved: 'Send the invoice', Invoiced: 'Done', Declined: 'Not going ahead' } as Record<string, string>)[j.status];
 }
 export function jobEvent(s: S, id: string, text: string, patch: Partial<Job> = {}, by = ME_NAME) {
   const e: JobEvent = { at: nowStamp(), by, text };
   s.setJobs(js => js.map(x => x.id === id ? { ...x, ...patch, events: [...x.events, e] } : x));
 }
 
-/** Approve a job: the cost comes off that property's repair budget once, even if clicked twice. Alerts go out at 70%, 90% and 100%. */
-export function approveJob(s: S, j: Job, L: Lookups) {
-  if (j.status !== 'Waiting approval') { s.toast('Already decided. Nothing was taken twice.'); return; }
-  const p = L.prop(j.property);
-  let alert = '';
-  if (p?.managed && p.budget) {
-    const before = p.used / p.budget * 100, after = (p.used + j.price) / p.budget * 100;
-    const hit = [100, 90, 70].find(t => before < t && after >= t);
-    if (hit) {
-      alert = ` ${L.landlord(p.owner)?.name} got the ${hit}% budget alert.`;
-      s.setLandlords(ls => ls.map(l => l.id === p.owner ? { ...l, comms: [...l.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: 'System', channel: 'Email', dir: 'out', subject: `Repair budget ${hit}% used · ${p.address}`, text: `The yearly repair budget for ${p.address} is now ${Math.round(after)}% used (${money(p.used + j.price)} of ${money(p.budget)}).` }] } : l));
-    }
-    s.setProperties(ps => ps.map(x => x.id === p.id ? { ...x, used: x.used + j.price } : x));
+/* ---- who pays: the landlord's plan (maintenance budget) or the landlord ---- */
+const rr = (n: number) => Math.round(n * 100) / 100;
+/** What the plan covers and what the landlord pays for a job of this total. Under the limit or managed under the plan, the plan pays it all. */
+export function coverOf(j: Job, L: Lookups, total = j.price) {
+  if (!j.managed) return { total, covered: 0, pays: total };
+  const covered = j.approval === 'Landlord' ? Math.min(j.covered ?? 0, total) : j.approval || !overLimit(j, L) ? total : 0;
+  return { total, covered: rr(covered), pays: rr(total - covered) };
+}
+/** Suggested part the plan pays when the Supervisor sends a job to the landlord: up to the job limit, if the budget has it. */
+export function defaultCover(j: Job, L: Lookups) { const p = L.prop(j.property); const left = p ? Math.max(0, p.budget - p.used) : 0; return Math.min(j.price, jobLimit(j, L), left); }
+
+/** Takes an amount off the property's yearly repair budget, once. Alerts go out at 70%, 90% and 100%. Returns the alert line, if any. */
+function takeFromBudget(s: S, j: Job, L: Lookups, amount: number) {
+  const p = L.prop(j.property); if (!p?.managed || !p.budget || amount <= 0) return '';
+  const before = p.used / p.budget * 100, after = (p.used + amount) / p.budget * 100;
+  const hit = [100, 90, 70].find(t => before < t && after >= t); let alert = '';
+  if (hit) {
+    alert = ` ${L.landlord(p.owner)?.name} got the ${hit}% budget alert.`;
+    s.setLandlords(ls => ls.map(l => l.id === p.owner ? { ...l, comms: [...l.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: 'System', channel: 'Email', dir: 'out', subject: `Repair budget ${hit}% used · ${p.address}`, text: `The yearly repair budget for ${p.address} is now ${Math.round(after)}% used (${money(p.used + amount)} of ${money(p.budget)}).` }] } : l));
   }
-  const nl = needsLandlord(j, L); const cn = L.contractor(j.contractor)?.name;
-  jobEvent(s, j.id, `Approved by Supervisor. ${money(j.price)} taken from the repair budget.${nl ? ` Next, ${L.landlord(p?.owner)?.name} approves the invoice before work starts.` : cn ? ` ${cn} has the job.` : ''}`, { status: nl ? 'Landlord approval' : j.contractor ? 'Assigned' : 'Ready to assign' }, SUPERVISOR);
-  s.log(`${SUPERVISOR} approved ${j.title} at ${p?.address} (${money(j.price)})`, 'Sent to Supervisor');
-  s.toast(`${SUPERVISOR} approved ${j.title}. ${money(j.price)} taken from the budget once.${alert}`);
+  s.setProperties(ps => ps.map(x => x.id === p.id ? { ...x, used: x.used + amount } : x));
+  return alert;
+}
+export type Decision = 'Office Admin' | 'Under plan' | 'Landlord';
+/** Approve a managed job. Under the limit the Office Admin approves it. Over the limit the Supervisor manages it under the plan or sends it to the landlord.
+ *  The covered amount comes off that property's repair budget once, even if clicked twice. */
+export function approveJob(s: S, j: Job, L: Lookups, how: Decision = 'Under plan', covered?: number) {
+  const ready = how === 'Office Admin' ? j.status === 'New' : j.status === 'Waiting approval';
+  if (!ready) { s.toast('Already decided. Nothing was taken twice.'); return; }
+  const p = L.prop(j.property); const ll = L.landlord(p?.owner); const cn = L.contractor(j.contractor)?.name;
+  const cov = how === 'Landlord' ? rr(Math.max(0, Math.min(covered ?? defaultCover(j, L), j.price))) : j.price;
+  const alert = takeFromBudget(s, j, L, cov);
+  const next = how === 'Landlord' ? 'Landlord approval' as const : j.contractor ? 'Assigned' as const : 'Ready to assign' as const;
+  const text = how === 'Office Admin' ? `Approved by the Office Admin. Under the ${money(jobLimit(j, L))} job limit, so no Supervisor approval is needed. ${money(cov)} taken from the maintenance budget.${cn ? ` ${cn} has the job.` : ''}`
+    : how === 'Under plan' ? `Approved by Supervisor · managed under the plan. ${money(cov)} taken from the maintenance budget.${cn ? ` ${cn} has the job.` : ''}`
+    : `Approved by Supervisor · sent to the landlord. The plan covers ${money(cov)}, ${ll?.name ?? 'the landlord'} pays ${money(rr(j.price - cov))}. Next, the Office Admin sends ${ll?.name ?? 'the landlord'} a quote to approve before work starts.`;
+  jobEvent(s, j.id, text, { status: next, approval: how, covered: cov }, how === 'Office Admin' ? (PORTAL === 'oa' ? ME_NAME : adminName(j.admin)) : SUPERVISOR);
+  s.log(`${how === 'Office Admin' ? 'Approved' : `${SUPERVISOR} approved`} ${j.title} at ${p?.address} (${money(j.price)}${how === 'Landlord' ? `, sent to the landlord, plan covers ${money(cov)}` : how === 'Under plan' ? ', managed under the plan' : ''})`, PORTAL === 'oa' ? 'Jobs' : 'Approvals');
+  s.toast(how === 'Office Admin' ? `Approved. ${cn ?? 'The contractor'} has the job. ${money(cov)} taken from the budget once.${alert}` : how === 'Under plan' ? `Approved under the plan. ${money(cov)} taken from the budget once.${alert}` : `Sent to the landlord. The Office Admin now sends ${ll?.name ?? 'them'} a quote.${alert}`);
+}
+/** Supervisor declines a job waiting for approval. The budget is not touched. */
+export function declineJob(s: S, j: Job, reason: string) {
+  jobEvent(s, j.id, `Declined by Supervisor: ${reason}`, { status: 'Declined', declined: reason }, SUPERVISOR);
+  s.log(`${SUPERVISOR} declined ${j.title}: ${reason}`, PORTAL === 'oa' ? 'Sent to Supervisor' : 'Approvals'); s.toast('Declined. The budget was not touched.');
 }
 
 /** Rows on a quote or invoice. A job without its own rows gets one labour row for its price. */
@@ -66,7 +97,8 @@ export function sendJobInvoice(s: S, j: Job, L: Lookups) {
   const p = L.prop(j.property);
   const id = nextInvoiceNo(s);
   const toName = L.ownerName(p); const lines = jobLines(j); const total = lineSum(lines);
-  s.setInvoices(is => [{ id, to: p?.owner ?? '', toKind: p?.managed ? 'Landlord' : 'Client', job: j.id, amount: total, paid: 0, terms: p?.managed ? 'Straight away' : (L.client(p?.owner)?.terms ?? '30 days'), issued: '15 Oct 2026', due: p?.managed ? '15 Oct 2026' : '14 Nov 2026', overdue: false, site: p?.address, items: lines.map(l => ({ activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: Math.round(l.qty * l.rate * 100) / 100 })) }, ...is]);
+  const cv = coverOf(j, L, total); const part = j.managed && cv.covered > 0 ? (cv.pays > 0 ? { amount: cv.pays, coveredAmt: cv.covered, paid: 0 } : { amount: total, covered: true, coveredAmt: cv.covered, paid: total, paidAt: nowStamp() }) : { amount: total, paid: 0 };
+  s.setInvoices(is => [{ id, to: p?.owner ?? '', toKind: p?.managed ? 'Landlord' : 'Client', job: j.id, ...part, terms: p?.managed ? 'Straight away' : (L.client(p?.owner)?.terms ?? '30 days'), issued: '15 Oct 2026', due: p?.managed ? '15 Oct 2026' : '14 Nov 2026', overdue: false, site: p?.address, items: lines.map(l => ({ activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: Math.round(l.qty * l.rate * 100) / 100 })) }, ...is]);
   jobEvent(s, j.id, `Invoice ${id} sent to ${toName}`, { status: 'Invoiced', invoice: id });
   s.log(`Sent invoice ${id} (${money(total)}) to ${toName} for ${j.title}`, 'Rent & Invoices');
   s.toast(`Invoice ${id} sent to ${toName}`);

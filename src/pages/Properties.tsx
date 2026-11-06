@@ -11,6 +11,10 @@ import { PlanCard, PlanModal } from './PropertyPlan';
 import { PropertyHistory, PropertyMoney, ClientHomeInvoices } from './PropertyExtras';
 import { FeeCard, LeaseFromCard, LeaseTab, EditBudget, budgetSource } from './Money';
 import { isLeased, LSP_NAME } from '../pricing';
+import { RoomsCard } from './Rooms';
+import { DamageCard } from './Damage';
+import { DAMAGE_OPEN } from '../damage';
+import type { Room } from '../rooms';
 
 const occupancy = (s: ReturnType<typeof useStore>, p: Property) => {
   const live = s.tenants.filter(t => t.property === p.id && t.status !== 'Moved out');
@@ -58,7 +62,7 @@ function PropertyList() {
   </>;
 }
 
-type PTab = 'overview' | 'tenants' | 'jobs' | 'safety' | 'inspections' | 'budget' | 'lease' | 'money' | 'history';
+type PTab = 'overview' | 'rooms' | 'damage' | 'tenants' | 'jobs' | 'safety' | 'inspections' | 'budget' | 'lease' | 'money' | 'history';
 function PropertyPage({ id }: { id: string }) {
   const s = useStore(); const L = useLookups(); const p = s.properties.find(x => x.id === id)!;
   const [tab, setTab] = useState<PTab>('overview'); const [m, setM] = useState<'' | 'job' | 'insp' | 'list' | 'reports' | 'plan' | 'budget'>(''); const leased = isLeased(p);
@@ -72,7 +76,8 @@ function PropertyPage({ id }: { id: string }) {
   const pct = p.budget ? Math.round(p.used / p.budget * 100) : 0;
   const spent = jobs.filter(j => ['Approved', 'Invoiced', 'Assigned', 'In progress', 'Proof uploaded', 'Ready to assign'].includes(j.status) && j.price);
   const ownerLink = () => p.managed ? s.go('landlords', p.owner) : s.go('clients', p.owner);
-  const tabs: { id: PTab; label: string; count?: number }[] = [{ id: 'overview', label: 'Overview' }, ...(p.managed ? [{ id: 'tenants' as PTab, label: p.type === 'HMO' ? 'Rooms' : 'Tenants', count: tenants.length }] : []), { id: 'jobs', label: 'Jobs', count: jobs.length }, ...(p.managed ? [{ id: 'safety' as PTab, label: 'Safety checks', count: certs.length }, { id: 'inspections' as PTab, label: 'Inspections', count: insp.length }, ...(leased ? [{ id: 'lease' as PTab, label: 'Lease' }] : []), { id: 'budget' as PTab, label: 'Maintenance budget' }] : []), { id: 'money', label: p.managed ? 'Rent & invoices' : 'Invoices' }, { id: 'history', label: 'History' }];
+  const roomCount = s.rooms.filter(r => r.property === id).length; const dmOpen = s.damages.filter(d => d.property === id && DAMAGE_OPEN.includes(d.status)).length;
+  const tabs: { id: PTab; label: string; count?: number }[] = [{ id: 'overview', label: 'Overview' }, { id: 'rooms', label: 'Rooms', count: roomCount }, ...(p.managed ? [{ id: 'tenants' as PTab, label: 'Tenants', count: tenants.length }] : []), { id: 'jobs', label: 'Jobs', count: jobs.length }, ...(p.managed ? [{ id: 'safety' as PTab, label: 'Safety checks', count: certs.length }, { id: 'inspections' as PTab, label: 'Inspections', count: insp.length }, ...(leased ? [{ id: 'lease' as PTab, label: 'Lease' }] : []), { id: 'budget' as PTab, label: 'Maintenance budget' }] : []), ...(p.managed && !leased ? [{ id: 'damage' as PTab, label: 'Tenant damage', count: dmOpen || undefined }] : []), { id: 'money', label: p.managed ? 'Rent & invoices' : 'Invoices' }, { id: 'history', label: 'History' }];
   return <>
     <PageHeader crumbs={crumbsFor('properties', s.go, p.address)} back={() => s.go('properties')} title={p.address}
       action={<div className="flex"><Btn kind="ghost" icon={<HistoryIcon size={16} />} onClick={() => setTab('history')}>History</Btn>{p.managed && <Btn kind="outline" icon={<FileText size={16} />} onClick={() => setM('plan')}>Property plan</Btn>}<Btn kind="outline" icon={<Wrench size={16} />} onClick={() => setM('job')}>New job</Btn>{p.managed && <Btn kind="outline" icon={<ClipboardCheck size={16} />} onClick={() => setM('insp')}>Book inspection</Btn>}{p.managed && p.status !== 'Let' && <Btn icon={<Megaphone size={16} />} onClick={() => setM('list')}>List to let</Btn>}</div>} />
@@ -93,7 +98,7 @@ function PropertyPage({ id }: { id: string }) {
     <PageTabs value={tab} onChange={setTab} items={tabs} />
 
     {tab === 'overview' && <div className="grid g2">
-      {p.managed && <Card title={p.type === 'HMO' ? 'Rooms' : 'Who lives here'} action={<Btn sm kind="ghost" onClick={() => setTab('tenants')}>Open</Btn>}><Occupants p={p} /></Card>}
+      {p.managed && <Card title={p.type === 'HMO' ? 'Tenants by room' : 'Who lives here'} action={<Btn sm kind="ghost" onClick={() => setTab('tenants')}>Open</Btn>}><Occupants p={p} /></Card>}
       <Card title="Open jobs" action={<Btn sm kind="ghost" onClick={() => setTab('jobs')}>See all {jobs.length}</Btn>}>{open.length ? <div className="divlist">{open.slice(0, 4).map(j => <button key={j.id} className="item click" onClick={() => s.go('jobs', j.id)}><span className={`tile ${j.urgent ? 't-err' : 't-info'}`} style={{ width: 32, height: 32 }}><Wrench size={15} /></span><div className="stack grow"><b>{j.title}</b><span className="caption">{j.reported} · {L.contractor(j.contractor)?.name ?? 'No contractor yet'}</span></div><Chip tone={jobTone(j.status)}>{j.status}</Chip></button>)}</div> : <Note tone="ok">No open jobs.</Note>}</Card>
       {p.managed && <Card title="Safety checks" action={<Btn sm kind="ghost" onClick={() => setTab('safety')}>Open</Btn>}><div className="certgrid">{CERT_KINDS.filter(k => certs.some(c => c.kind === k)).map(k => { const c = certs.find(x => x.kind === k)!; return <button key={k} className={`certcell c-${certTone(c.status)}`} onClick={() => s.go('safety', c.id)}><b>{k}</b><span>{c.status === 'Missing' ? 'No certificate' : 'Ends ' + c.expires}</span><Chip tone={certTone(c.status)}>{c.status}</Chip></button>; })}</div></Card>}
       {p.managed && <Card title="Inspections" action={<Btn sm kind="ghost" onClick={() => setTab('inspections')}>See all {insp.length}</Btn>}>
@@ -107,7 +112,9 @@ function PropertyPage({ id }: { id: string }) {
       {!p.managed && <Card title="Client"><KV rows={[['Client', L.client(p.owner)?.name ?? ''], ['Contact', L.client(p.owner)?.contact ?? ''], ['Phone', L.client(p.owner)?.phone ?? ''], ['Invoice terms', L.client(p.owner)?.terms ?? '']]} /><Note>The client looks after tenants and rent. LSP sends contractors, quotes and invoices.</Note></Card>}
     </div>}
 
-    {tab === 'tenants' && <Card title={p.type === 'HMO' ? 'Rooms' : 'Tenants'}><Occupants p={p} /></Card>}
+    {tab === 'rooms' && <RoomsCard p={p} edit occupant={p.type === 'HMO' ? (r: Room) => <RoomTenant p={p} r={r} /> : undefined} />}
+    {tab === 'damage' && <DamageCard property={p} />}
+    {tab === 'tenants' && <Card title={p.type === 'HMO' ? 'Tenants by room' : 'Tenants'}><Occupants p={p} /></Card>}
     {tab === 'jobs' && <Card title="Jobs at this home" sub={`Download job reports with photo proof to share with ${L.ownerName(p)} when they ask.`} action={<div className="flex"><Btn sm kind="outline" icon={<Download size={14} />} disabled={!jobs.length} onClick={() => setM('reports')}>Download job reports</Btn><Btn sm icon={<Plus size={14} />} onClick={() => setM('job')}>New job</Btn></div>}><JobTable list={jobs} hideHome /></Card>}
     {tab === 'money' && (p.managed ? <PropertyMoney p={p} /> : <ClientHomeInvoices p={p} />)}
     {tab === 'history' && <PropertyHistory p={p} />}
@@ -137,4 +144,12 @@ function Occupants({ p }: { p: Property }) {
     <span className="caption">{money(Math.round(p.rent / (p.rooms ?? 1)))} pcm</span></button>; })}</div>;
   if (!tenants.length) return <Empty icon={<Users size={22} />}>No tenant yet. This home is in Lettings.</Empty>;
   return <div className="divlist">{tenants.map(t => { const r = s.rent.find(x => x.tenant === t.id); return <button key={t.id} className="item click" onClick={() => s.go('tenants', t.id)}><Avatar name={t.name} /><div className="stack grow"><b>{t.name}</b><span className="caption">Since {t.start} · until {t.end}</span></div>{r && <Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip>}<Chip tone={t.status === 'Live' ? 'ok' : 'warn'}>{t.status}</Chip><ArrowRight size={16} color="#98A2B3" /></button>; })}</div>;
+}
+
+/** Shared houses: who lives in a lettable room, shown on the room card and room panel. */
+function RoomTenant({ p, r }: { p: Property; r: Room }) {
+  const s = useStore();
+  if (!r.letRoom) return <span className="caption">{r.kind} · shared</span>;
+  const t = s.tenants.find(x => x.property === p.id && x.room === r.letRoom && x.status !== 'Moved out');
+  return t ? <span className="cell small"><Avatar name={t.name} />{t.name}<Chip tone={t.status === 'Live' ? 'ok' : 'warn'}>{t.status}</Chip></span> : <span className="caption">{r.letRoom} · empty, ready to let</span>;
 }

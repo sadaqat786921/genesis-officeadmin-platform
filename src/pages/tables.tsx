@@ -84,7 +84,7 @@ export function JobTable({ list: all, hideHome, route = 'jobs', filter = true, s
 }
 
 /* ---------- invoices ---------- */
-export function invoiceState(i: Invoice) { const left = i.amount - i.paid; return left <= 0 ? { label: 'Paid', tone: 'ok' as const } : i.overdue ? { label: `Overdue · ${money(left)}`, tone: 'err' as const } : i.paid ? { label: 'Part-paid', tone: 'warn' as const } : { label: 'Sent', tone: 'info' as const }; }
+export function invoiceState(i: Invoice) { const left = i.amount - i.paid; return i.covered ? { label: 'Covered by plan', tone: 'ok' as const } : left <= 0 ? { label: 'Paid', tone: 'ok' as const } : i.overdue ? { label: `Overdue · ${money(left)}`, tone: 'err' as const } : i.paid ? { label: 'Part-paid', tone: 'warn' as const } : { label: 'Sent', tone: 'info' as const }; }
 export function InvoiceTable({ list: all, filter = true }: { list: Invoice[]; filter?: boolean }) {
   const s = useStore(); const L = useLookups(); const [open, setOpen] = useState<string | null>(null); const [f, setF] = useFlt();
   const name = (i: Invoice) => i.toKind === 'Client' ? L.client(i.to)?.name : L.landlord(i.to)?.name;

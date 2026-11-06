@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import * as D from './data';
 import { VAT_START, type VatSetting } from './pricing';
+import { seedRooms, type Room } from './rooms';
+import type { Damage } from './damage';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 export type Route =
@@ -33,6 +35,8 @@ interface Store {
   locked: D.LockedRecord[]; setLocked: Setter<D.LockedRecord>;
   support: D.SupportReq[]; setSupport: Setter<D.SupportReq>;
   catalogue: D.Product[]; setCatalogue: Setter<D.Product>;
+  rooms: Room[]; setRooms: Setter<Room>;
+  damages: Damage[]; setDamages: Setter<Damage>;
   leads: D.Lead[]; setLeads: Setter<D.Lead>;
   requests: D.SupReq[]; setRequests: Setter<D.SupReq>;
   plans: D.PlanVersion[]; setPlans: Setter<D.PlanVersion>;
@@ -98,6 +102,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [support, setSupport] = useList(D.SUPPORT);
   const [plans, setPlans] = useList<D.PlanVersion>([]);
   const [catalogue, setCatalogue] = useList(D.CATALOGUE);
+  const [rooms, setRooms] = useList(seedRooms(SCOPE.properties));
+  const [damages, setDamages] = useList(D.DAMAGES.filter(d => SCOPE.properties.some(p => p.id === d.property)));
   const [vat, setVat] = useState<VatSetting>(VAT_START);
   const [leasePays, setLeasePays] = useList(D.LEASE_PAYS.filter(x => SCOPE.properties.some(p => p.id === x.property)));
   const [leads, setLeads] = useList(D.LEADS.filter(l => l.owner === D.ME));
@@ -119,8 +125,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     route, detail, go, toast, toasts, log, activity,
     staff, setStaff, landlords, setLandlords, properties, setProperties, enquiries, setEnquiries, applicants, setApplicants, tenants, setTenants,
     signups, setSignups, clients, setClients, contractors, setContractors, jobs, setJobs, inspections, setInspections, safety, setSafety,
-    rent, setRent, invoices, setInvoices, tasks, setTasks, locked, setLocked, support, setSupport, plans, setPlans, requests, setRequests, leads, setLeads, catalogue, setCatalogue, payouts, setPayout, vat, setVat, leasePays, setLeasePays,
-  }), [vat, leasePays, setLeasePays, leads, setLeads, catalogue, setCatalogue, plans, setPlans, requests, setRequests, route, detail, go, toast, toasts, log, activity, staff, landlords, properties, enquiries, applicants, tenants, signups, clients, contractors, jobs, inspections, safety, rent, invoices, tasks, locked, support, payouts, setPayout, setStaff, setLandlords, setProperties, setEnquiries, setApplicants, setTenants, setSignups, setClients, setContractors, setJobs, setInspections, setSafety, setRent, setInvoices, setTasks, setLocked, setSupport]);
+    rent, setRent, invoices, setInvoices, tasks, setTasks, locked, setLocked, support, setSupport, plans, setPlans, requests, setRequests, leads, setLeads, catalogue, setCatalogue, payouts, setPayout, vat, setVat, leasePays, setLeasePays, rooms, setRooms, damages, setDamages,
+  }), [rooms, setRooms, damages, setDamages, vat, leasePays, setLeasePays, leads, setLeads, catalogue, setCatalogue, plans, setPlans, requests, setRequests, route, detail, go, toast, toasts, log, activity, staff, landlords, properties, enquiries, applicants, tenants, signups, clients, contractors, jobs, inspections, safety, rent, invoices, tasks, locked, support, payouts, setPayout, setStaff, setLandlords, setProperties, setEnquiries, setApplicants, setTenants, setSignups, setClients, setContractors, setJobs, setInspections, setSafety, setRent, setInvoices, setTasks, setLocked, setSupport]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

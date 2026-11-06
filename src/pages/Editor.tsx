@@ -6,7 +6,7 @@ import { Btn, Card, Chip, Field, Modal, Note, Select, Text, Area } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
 import { COMPANY, DocSheet } from './docs';
 import { vatActive } from '../pricing';
-import { jobEvent, jobLines, nextInvoiceNo } from './shared';
+import { jobEvent, jobLines, nextInvoiceNo, coverOf } from './shared';
 
 /* Full-page quote and invoice editor (like the client's accounting tool, in the LSP design).
    Rows pick a product or service by its code from the saved list; a new code can be saved for next time.
@@ -26,12 +26,12 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
   const s = useStore(); const L = useLookups();
   const job: Job | undefined = target !== 'new' ? s.jobs.find(j => j.id === target) : undefined;
   const jp = job ? L.prop(job.property) : undefined;
-  const isQuote = kind === 'quote';
+  const isQuote = kind === 'quote'; const mg = !!job?.managed;
   // customers: quotes go to letting agents (clients); invoices to landlords or clients
   const customers = useMemo(() => [
     ...s.clients.map(c => ({ id: c.id, kind: 'Client' as const, name: c.name, contact: c.contact, email: c.email, address: c.address, terms: c.terms })),
-    ...(!isQuote ? s.landlords.map(l => ({ id: l.id, kind: 'Landlord' as const, name: l.name, contact: l.name, email: l.email, address: l.billing, terms: 'Straight away' })) : []),
-  ], [s.clients, s.landlords, isQuote]);
+    ...(!isQuote || mg ? s.landlords.map(l => ({ id: l.id, kind: 'Landlord' as const, name: l.name, contact: l.name, email: l.email, address: l.billing, terms: 'Straight away' })) : []),
+  ], [s.clients, s.landlords, isQuote, mg]);
   const [cust, setCust] = useState(jp?.owner ?? client ?? customers[0]?.id ?? '');
   const c = customers.find(x => x.id === cust);
   const homes = s.properties.filter(p => p.owner === cust);
@@ -48,7 +48,7 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
   const startRows = (): Row[] => { const src = job ? (job.lines?.length ? job.lines : job.price ? jobLines(job) : []) : []; const rows = src.filter(l => l.code !== 'DISCOUNT').map(l => ({ ...l, code: l.code ?? '', key: Math.random().toString(36).slice(2) })); return rows.length ? [...rows, blank()] : [blank(), blank()]; };
   const [rows, setRows] = useState<Row[]>(startRows);
   const [disc, setDisc] = useState(''); const [discMode, setDiscMode] = useState<'%' | '£'>('%');
-  const [note, setNote] = useState(job?.quoteNote ?? (isQuote ? 'Price includes parts and labour. Work starts once the quote is accepted. This quote is valid until the expiry date.' : 'Thank you for your business. Please contact us with any questions about this invoice.'));
+  const [note, setNote] = useState((isQuote ? job?.quoteNote : undefined) ?? (isQuote ? (mg ? 'This repair is over your job limit, so we need your approval before any work starts. Your plan covers part of it and you pay the rest, as shown below. Nothing is charged until the work is done and checked.' : 'Price includes parts and labour. Work starts once the quote is accepted. This quote is valid until the expiry date.') : 'Thank you for your business. Please contact us with any questions about this invoice.'));
   const [pay, setPay] = useState(`Please make payment to:\n${COMPANY.name}\n${COMPANY.bank.join('\n')}\nReference: ${no}`);
   const [memo, setMemo] = useState(job?.memo ?? '');
   const [files, setFiles] = useState<{ name: string; size: string; send: boolean }[]>((job?.attachments ?? []).map(n => ({ name: n, size: '460 kB', send: true })));
@@ -62,6 +62,8 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
   const discAmt = r2(+disc > 0 ? (discMode === '%' ? sub * +disc / 100 : +disc) : 0);
   const total = r2(sub - discAmt);
   const va = vatActive(s.vat); const vatAmt = va ? r2(total * s.vat.rate / 100) : 0; const gross = r2(total + vatAmt);
+  /** Managed jobs: the part the landlord's plan covers and what the landlord pays. */
+  const cov = job && mg ? coverOf(job, L, gross).covered : 0; const pays = r2(gross - cov);
   const lines: Line[] = [...used.map(({ key: _k, ...l }) => ({ ...l, activity: l.activity || l.desc })), ...(discAmt ? [{ code: 'DISCOUNT', activity: 'Discount', desc: discMode === '%' ? `${disc}% discount` : 'Discount', qty: 1, rate: -discAmt }] : [])];
   const costN = +cost || Math.round(total * .7);
   const siteLabel = site === 'other' ? siteText : (() => { const p = L.prop(site); return p ? `${p.address}, ${p.area}` : ''; })();
@@ -74,6 +76,13 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
 
   const saveQuote = (send: boolean, mail?: { to: string; subject: string; body: string }) => {
     const at = nowStamp(); const p = L.prop(site);
+    if (job && mg) {
+      const comm2 = mail ? [{ id: 'cm' + Date.now(), at, by: ME_NAME, channel: 'Email' as const, dir: 'out' as const, subject: mail.subject, text: `${mail.body.split('\n')[0]} Attached: Quote-${no}.pdf.` }] : [];
+      const patch: Partial<Job> = { lines, price: total, quoteNo: no, quoteNote: note, memo, attachments: files.map(f => f.name), billTo, quoteEmail: email, validUntil: fromInput(expiry), ...(send ? { quoted: at, landlordAsk: at } : {}) };
+      jobEvent(s, job.id, send ? `Quote ${no} sent to ${c?.name} to approve before work starts: ${money(gross)}, the plan covers ${money(cov)}, ${c?.name} pays ${money(pays)}` : `Quote ${no} saved as a draft`, { ...patch, comms: [...job.comms, ...comm2] }, ME_NAME);
+      s.log(send ? `Sent quote ${no} to ${c?.name} for ${job.title} (plan covers ${money(cov)}, landlord pays ${money(pays)})` : `Saved quote ${no} as a draft for ${c?.name}`, 'Jobs');
+      s.toast(send ? `Quote ${no} sent to ${mail?.to}` : `Quote ${no} saved as a draft`); back(); return;
+    }
     const comm = mail ? [{ id: 'cm' + Date.now(), at, by: ME_NAME, channel: 'Email' as const, dir: 'out' as const, subject: mail.subject, text: `${mail.body.split('\n')[0]} Attached: Quote-${no}.pdf${files.filter(f => f.send).length ? ' and ' + files.filter(f => f.send).map(f => f.name).join(', ') : ''}.` }] : [];
     const patch: Partial<Job> = { lines, price: total, cost: costN, contractor: con, quoteNo: no, quoteNote: note, memo, attachments: files.map(f => f.name), billTo, quoteEmail: email, validUntil: fromInput(expiry), acceptedBy: acceptedBy || undefined, acceptedAt: acceptedAt ? fromInput(acceptedAt) : undefined, ...(send ? { status: 'Quote sent' as const, quoted: at } : {}) };
     let id = job?.id;
@@ -89,22 +98,23 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
   };
   const saveInvoice = (send: boolean, mail?: { to: string; subject: string; body: string }) => {
     if (!send) { if (job) { jobEvent(s, job.id, 'Invoice draft saved', { lines }, ME_NAME); s.toast('Invoice draft saved'); back(); } return; }
-    const inv: Invoice = { id: no, to: cust, toKind: c!.kind, job: job?.id, amount: gross, vat: vatAmt || undefined, vatRate: va ? s.vat.rate : undefined, vatNo: va ? s.vat.number : undefined, paid: 0, terms: terms === 'Due on receipt' ? 'Straight away' : terms.replace('Net ', '') + ' days', issued: fromInput(date), due, overdue: false, site: siteLabel, note, memo, attachments: files.map(f => f.name), billTo, items: lines.map(l => ({ code: l.code, activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: r2(l.qty * l.rate) })) };
+    /** Fully covered invoices are settled by the plan straight away; the landlord has nothing to pay. */
+    const covPart = mg && cov > 0 ? (pays > 0 ? { amount: pays, coveredAmt: cov } : { amount: gross, covered: true, coveredAmt: cov, paidAt: nowStamp() }) : { amount: gross };
+    const inv: Invoice = { id: no, to: cust, toKind: c!.kind, job: job?.id, ...covPart, vat: vatAmt || undefined, vatRate: va ? s.vat.rate : undefined, vatNo: va ? s.vat.number : undefined, paid: 'covered' in covPart ? gross : 0, terms: terms === 'Due on receipt' ? 'Straight away' : terms.replace('Net ', '') + ' days', issued: fromInput(date), due, overdue: false, site: siteLabel, note, memo, attachments: files.map(f => f.name), billTo, items: lines.map(l => ({ code: l.code, activity: l.activity, desc: l.desc, qty: l.qty, rate: l.rate, amount: r2(l.qty * l.rate) })) };
     s.setInvoices(is => [inv, ...is]);
-    const ask = job?.status === 'Landlord approval';
-    if (job) jobEvent(s, job.id, ask ? `Invoice ${no} sent to ${c?.name} to approve before work starts` : `Invoice ${no} sent to ${c?.name}`, { ...(ask ? { landlordAsk: nowStamp() } : { status: 'Invoiced' as const }), invoice: no, lines, comms: [...job.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: mail?.subject, text: `Invoice ${no} for ${money(total)} sent with the PDF attached.` }] }, ME_NAME);
+    if (job) jobEvent(s, job.id, `Invoice ${no} sent to ${c?.name}${mg && cov > 0 ? `: ${money(gross)}, the plan covers ${money(cov)}, ${pays > 0 ? `${c?.name} pays ${money(pays)}` : 'nothing to pay'}` : ''}`, { status: 'Invoiced' as const, invoice: no, lines, comms: [...job.comms, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: mail?.subject, text: `Invoice ${no} for ${money(total)} sent with the PDF attached.` }] }, ME_NAME);
     s.log(`Sent invoice ${no} (${money(gross)}) to ${c?.name}`, 'Rent & Invoices'); s.toast(`Invoice ${no} sent to ${mail?.to}`);
     back();
   };
 
   const paper = <DocSheet kind={isQuote ? 'QUOTE' : 'INVOICE'} to={{ label: isQuote ? 'Quote for' : 'Invoice to', rows: billTo.split('\n') }}
     meta={isQuote ? [['Quote', no], ['Date', ddmm(fromInput(date))], ['Valid until', ddmm(fromInput(expiry))]] : [['Invoice', no.replace('INV-', '')], ['Date', ddmm(fromInput(date))], ['Terms', terms], ['Due date', ddmm(due)]]}
-    site={siteLabel} lines={lines} vatNo={va ? s.vat.number : undefined} foot={[...(discAmt || va ? [['Subtotal', '£' + num(sub)]] as [string, string][] : []), ...(discAmt ? [['Discount', '−£' + num(discAmt)]] as [string, string][] : []), ...(va ? [[`VAT ${s.vat.rate}%`, '£' + num(vatAmt)]] as [string, string][] : []), [isQuote ? 'Quote total' : 'Balance due', '£' + num(gross)]]}>
+    site={siteLabel} lines={lines} vatNo={va ? s.vat.number : undefined} foot={[...(discAmt || va ? [['Subtotal', '£' + num(sub)]] as [string, string][] : []), ...(discAmt ? [['Discount', '−£' + num(discAmt)]] as [string, string][] : []), ...(va ? [[`VAT ${s.vat.rate}%`, '£' + num(vatAmt)]] as [string, string][] : []), ...(cov > 0 ? [[isQuote ? 'Quote total' : 'Total', '£' + num(gross)], ['Covered by your plan', '−£' + num(cov)], [isQuote ? 'You pay' : 'Balance due', '£' + num(pays)]] as [string, string][] : [[isQuote ? 'Quote total' : 'Balance due', '£' + num(gross)]] as [string, string][])]}>
     {note && <p className="doc-note">{note}</p>}{!isQuote && pay && <p className="doc-note" style={{ whiteSpace: 'pre-line' }}>{pay}</p>}
   </DocSheet>;
 
   return <>
-    <PageHeader crumbs={isQuote ? crumbsFor('clients', s.go, title) : crumbsFor(job ? (job.managed ? 'jobs' : 'clients') : 'rent', s.go, title)} back={back} title={isQuote ? (job?.quoteNo ? `Quote ${no}` : 'Create quote') : 'Create invoice'}
+    <PageHeader crumbs={isQuote ? crumbsFor(mg ? 'jobs' : 'clients', s.go, title) : crumbsFor(job ? (job.managed ? 'jobs' : 'clients') : 'rent', s.go, title)} back={back} title={isQuote ? (job?.quoteNo ? `Quote ${no}` : 'Create quote') : 'Create invoice'}
       action={<Chip tone={isQuote ? 'brand' : 'info'}>{isQuote ? 'Quote' : 'Invoice'} {no}</Chip>} />
     <section className="card edoc">
       <div className="edoc-top">
@@ -121,7 +131,7 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
             : <><Field label="Terms"><Select value={terms} onChange={setTerms} options={['Due on receipt', 'Net 14', 'Net 30'].map(x => ({ value: x, label: x }))} /></Field><Field label="Due date"><div className="ro">{due}</div></Field></>}
         </div>
         <div className="col" style={{ gap: 12 }}>
-          {isQuote ? <><Field label="Accepted by"><Text value={acceptedBy} onChange={setAcceptedBy} placeholder="Filled in when the client accepts" /></Field><Field label="Accepted date"><input className="input" type="date" value={acceptedAt} onChange={e => setAcceptedAt(e.target.value)} /></Field></>
+          {isQuote && !mg ? <><Field label="Accepted by"><Text value={acceptedBy} onChange={setAcceptedBy} placeholder="Filled in when the client accepts" /></Field><Field label="Accepted date"><input className="input" type="date" value={acceptedAt} onChange={e => setAcceptedAt(e.target.value)} /></Field></>
             : <Field label="Job"><div className="ro">{job ? `${job.title} · ${jp?.address}` : 'Not linked to a job'}</div></Field>}
           <Field label="Site address">{job ? <div className="ro">{siteLabel}</div> : <Select value={site} onChange={setSite} options={[...homes.map(h => ({ value: h.id, label: `${h.address}, ${h.area}` })), { value: 'other', label: 'Other address' }]} />}</Field>
           {site === 'other' && !job && <Text value={siteText} onChange={setSiteText} />}
@@ -163,9 +173,11 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
             <div><span>Subtotal</span><b>{money(sub)}</b></div>
             <div><span>Discount</span><span className="flex" style={{ gap: 6 }}><span className="eseg">{(['%', '£'] as const).map(x => <button key={x} className={discMode === x ? 'on' : ''} onClick={() => setDiscMode(x)}>{x}</button>)}</span><input aria-label="Discount" value={disc} onChange={e => setDisc(e.target.value)} placeholder="0" /></span><b>{discAmt ? '−' + money(discAmt) : money(0)}</b></div>
             {va ? <div><span>VAT {s.vat.rate}%</span><b>{money(vatAmt)}</b></div> : <div><span>VAT</span><span className="caption">Off · LSP is not VAT registered</span></div>}
-            <div className="big"><span>{isQuote ? 'Quote total' : 'Balance due'}</span><b>{money(gross)}</b></div>
+            {cov > 0 ? <><div><span>{isQuote ? 'Quote total' : 'Total'}</span><b>{money(gross)}</b></div><div><span>Covered by the landlord's plan</span><b style={{ color: 'var(--ok)' }}>−{money(cov)}</b></div><div className="big"><span>{isQuote ? `${c?.name.split(' ')[0] ?? 'Landlord'} pays` : 'Balance due'}</span><b>{money(pays)}</b></div></>
+              : <div className="big"><span>{isQuote ? 'Quote total' : 'Balance due'}</span><b>{money(gross)}</b></div>}
           </div>
-          {isQuote && <Card className="flat" title="Staff only" sub="Not on the quote.">
+          {mg && job && <Card className="flat" title={job.approval === 'Landlord' ? 'Approved by the Supervisor' : 'Covered by the plan'} sub={job.approval === 'Landlord' ? `Sent to the landlord. The plan covers up to ${money(job.covered ?? 0)}. Staff only.` : 'Under the job limit or managed under the plan. Staff only.'}><Note tone="ok">The {isQuote ? 'quote' : 'invoice'} shows the total, what the plan covers and what {c?.name ?? 'the landlord'} pays.</Note></Card>}
+          {isQuote && !mg && <Card className="flat" title="Staff only" sub="Not on the quote.">
             <Field label="Contractor"><Select value={con} onChange={setCon} options={s.contractors.filter(x => x.type === 'Trade').map(x => ({ value: x.id, label: `${x.name} · ${x.trade}${x.status !== 'Active' ? ' (paused)' : ''}`, disabled: x.status !== 'Active' }))} /></Field>
             <Field label="Contractor cost (£)"><Text value={cost} onChange={setCost} placeholder={String(Math.round(total * .7))} /></Field>
             {total - costN >= 0 ? <Note tone="ok">LSP margin {money(r2(total - costN))}.</Note> : <Note tone="err">The total is lower than the contractor's cost.</Note>}
@@ -181,7 +193,7 @@ export function DocEditor({ kind, target, client, back }: { kind: Kind; target: 
       <Btn icon={<Send size={16} />} disabled={!ok} onClick={() => setM('send')}>Save and send</Btn>
     </div>
     {m === 'preview' && <Modal wide title={`Preview · ${isQuote ? 'Quote' : 'Invoice'} ${no}`} sub="This is the PDF the customer receives." onClose={() => setM('')} footer={<><Btn kind="outline" onClick={() => setM('')}>Back to edit</Btn><Btn icon={<Send size={16} />} disabled={!ok} onClick={() => setM('send')}>Save and send</Btn></>}>{paper}</Modal>}
-    {m === 'send' && <SendEmail kind={kind} no={no} to={email} cc={cc} name={c?.contact ?? c?.name ?? ''} total={gross} expiry={fromInput(expiry)} due={due} files={files.filter(f => f.send).map(f => f.name)} onClose={() => setM('')} onSend={mail => { setM(''); isQuote ? saveQuote(true, mail) : saveInvoice(true, mail); }} />}
+    {m === 'send' && <SendEmail kind={kind} no={no} to={email} cc={cc} name={c?.contact ?? c?.name ?? ''} total={gross} cover={cov > 0 ? { covered: cov, pays, landlord: isQuote && mg } : undefined} expiry={fromInput(expiry)} due={due} files={files.filter(f => f.send).map(f => f.name)} onClose={() => setM('')} onSend={mail => { setM(''); isQuote ? saveQuote(true, mail) : saveInvoice(true, mail); }} />}
     {typeof m === 'object' && <AddProduct code={m.add} onClose={() => setM('')} onSave={p => { s.setCatalogue(cs => [...cs, p]); if (m.row) pick(m.row, p); s.log(`Saved new product or service ${p.code} (${p.name})`, 'Products'); s.toast(`${p.code} saved. Next time it fills in by itself.`); setM(''); }} />}
   </>;
 }
@@ -219,12 +231,15 @@ function AddProduct({ code, onClose, onSave }: { code: string; onClose: () => vo
 }
 
 /* ---- email with the PDF, attachments and the LSP signature ---- */
-function SendEmail({ kind, no, to, cc, name, total, expiry, due, files, onClose, onSend }: { kind: Kind; no: string; to: string; cc: string; name: string; total: number; expiry: string; due: string; files: string[]; onClose: () => void; onSend: (m: { to: string; subject: string; body: string }) => void }) {
+function SendEmail({ kind, no, to, cc, name, total, expiry, due, files, onClose, onSend, cover }: { cover?: { covered: number; pays: number; landlord: boolean }; kind: Kind; no: string; to: string; cc: string; name: string; total: number; expiry: string; due: string; files: string[]; onClose: () => void; onSend: (m: { to: string; subject: string; body: string }) => void }) {
   const s = useStore(); const me = s.staff.find(x => x.id === ME);
   const isQuote = kind === 'quote'; const first = name.split(' ')[0] || 'there';
   const [t, setT] = useState(to); const [c2, setC2] = useState(cc);
   const [subject, setSubject] = useState(`${isQuote ? 'Quote' : 'Invoice'} ${no} from ${COMPANY.name}`);
-  const [body, setBody] = useState(isQuote
+  const [body, setBody] = useState(cover?.landlord
+    ? `Dear ${first},\n\nThis repair is over your job limit, so we need your approval before any work starts. Please find attached quote ${no}.\n\nTotal: ${money(total)}\nCovered by your plan: ${money(cover.covered)}\nYou pay: ${money(cover.pays)}\n\nPlease approve or decline it in your landlord portal. Nothing is charged until the work is done and checked.\n\nKind regards,`
+    : cover ? `Dear ${first},\n\nPlease find attached invoice ${no}. The total is ${money(total)}. Your plan covers ${money(cover.covered)}, ${cover.pays > 0 ? `so the balance to pay is ${money(cover.pays)}, due on ${due}` : 'so there is nothing to pay'}.\n\nThank you,\n\nKind regards,`
+    : isQuote
     ? `Dear ${first},\n\nPlease find attached our quote ${no} for ${money(total)}. It is valid until ${expiry}.\n\nTo go ahead, reply to this email or accept it in your client portal. If you have any questions, just let me know.\n\nKind regards,`
     : `Dear ${first},\n\nPlease find attached invoice ${no} for ${money(total)}, due on ${due}.\n\nPayment details are on the invoice. Thank you for your business.\n\nKind regards,`);
   const all = [`${isQuote ? 'Quote' : 'Invoice'}-${no}.pdf`, ...files];
@@ -252,6 +267,6 @@ export const editorLink = (kind: Kind, job?: string, client?: string) => [kind, 
 export function EditorRoute({ detail, ctx }: { detail: string; ctx: 'clients' | 'jobs' | 'rent' }) {
   const s = useStore();
   const [kind, target, client] = detail.split('~') as [Kind, string, string | undefined];
-  const back = () => target !== 'new' ? s.go(ctx === 'rent' ? 'jobs' : ctx, target) : client ? s.go('clients', client) : s.go(ctx);
+  const back = () => target !== 'new' ? s.go(ctx === 'rent' || ctx === 'clients' && s.jobs.find(j => j.id === target)?.managed ? 'jobs' : ctx, target) : client ? s.go('clients', client) : s.go(ctx);
   return <DocEditor kind={kind} target={target} client={client} back={back} />;
 }

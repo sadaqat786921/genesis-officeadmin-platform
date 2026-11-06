@@ -4,7 +4,8 @@ import { useStore, useLookups, money, landlordBudget, budgetTone } from '../stor
 import { PLAN, nowStamp, ME, ME_NAME, SUPERVISOR, type Comm, type ReqKind, type SupReq } from '../data';
 import { ActionCard, Avatar, Bar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, KV, Kpi, Modal, Note, PageTabs, Reason, Select, Tabs, Timeline, Empty, Area, Text, When, sortComms } from '../ui';
 import { PageHeader, crumbsFor } from '../Shell';
-import { HomeCard, adminName, approveJob, jobEvent, jobTone, needsLandlord, overLimit } from './shared';
+import { HomeCard, adminName, jobTone, overLimit, coverOf, canAskLandlord } from './shared';
+import { DecisionButtons, DeclineJob } from './Decide';
 import { linkLeadLandlord } from './Switch';
 
 type S = ReturnType<typeof useStore>;
@@ -73,7 +74,7 @@ function RequestList() {
       <Kpi icon={<Send size={18} />} tone="info" label="Other requests" value={asks.length} caption="new landlords, unlocks…" onClick={() => setTab('waiting')} />
       <Kpi icon={<CheckCircle2 size={18} />} tone="ok" label="Answered" value={answered.length + decidedJobs.length} caption="see the reply" active={tab === 'answered'} onClick={() => setTab('answered')} />
     </div>
-    <Note>An Office Admin can't approve repairs (every managed job goes to the Supervisor, under or over the limit), approve a tenant, create a landlord or unlock a record. Those come here for {SUPERVISOR}. You can prepare everything first: email the landlord, log their reply, and remind the Supervisor.</Note>
+    <Note>You approve repairs under the landlord's job limit yourself on the job page. Repairs over the limit come here for {SUPERVISOR} to decide: manage it under the plan, send the landlord a quote, or decline. You also can't approve a tenant, create a landlord or unlock a record. Those come here for {SUPERVISOR}. You can prepare everything first: email the landlord, log their reply, and remind the Supervisor.</Note>
     <Tabs value={tab} onChange={setTab} items={[{ id: 'waiting', label: 'Waiting', count: rows.length }, { id: 'answered', label: 'Answered', count: answered.length + decidedJobs.length }, { id: 'budgets', label: 'Maintenance budgets' }]} />
     {tab === 'waiting' && <Card title={`Waiting for ${SUPERVISOR}`} sub="Click a row to see everything about it.">
       <div className="tablewrap"><table className="t"><thead><tr><th>Request</th><th>Type</th><th>Sent</th><th>Status</th><th /></tr></thead><tbody>
@@ -139,7 +140,7 @@ function RepairApproval({ id }: { id: string }) {
   const p = L.prop(j.property)!; const ll = L.landlord(p.owner); const limit = ll ? PLAN[ll.plan].limit : 0; const c = L.contractor(j.contractor);
   const [tab, setTab] = useState<'details' | 'comms'>('details'); const [m, setM] = useState<'' | 'decline' | 'email' | 'reply'>('');
   const waiting = j.status === 'Waiting approval';
-  const usedNow = waiting ? p.used : p.used - (j.events.some(e => e.text.startsWith('Approved by Supervisor')) ? j.price : 0);
+  const cv = coverOf(j, L); const usedNow = waiting ? p.used : p.used - (j.events.some(e => e.text.startsWith('Approved by Supervisor')) ? cv.covered : 0);
   const after = p.budget ? Math.round((usedNow + j.price) / p.budget * 100) : 0; const before = p.budget ? Math.round(usedNow / p.budget * 100) : 0;
   const hit = [100, 90, 70].find(t => before < t && after >= t);
   const lb = ll ? landlordBudget(s, ll.id) : undefined;
@@ -170,18 +171,18 @@ function RepairApproval({ id }: { id: string }) {
           <CommsLog items={j.comms} to={ll?.email} onAdd={c2 => addComm(c2, 'Saved')} emptyText="No messages with the landlord yet." /></Card>}
       </div>
       <div className="col">
-        {waiting ? <ActionCard tone="warn" title={`Waiting for ${SUPERVISOR}`} text={j.price > limit ? `${money(j.price)} is ${money(j.price - limit)} over the ${money(limit)} limit. Only the Supervisor can approve it.${needsLandlord(j, L) ? ' After that, you send the landlord an invoice to approve before work starts.' : ''}` : `${money(j.price)} is under the ${money(limit)} limit. Every managed job still needs the Supervisor's approval. Then ${c?.name ?? 'the contractor'} gets the job.`}>
+        {waiting ? <ActionCard tone="warn" title={`Waiting for ${SUPERVISOR}`} text={`${money(j.price)} is ${money(j.price - limit)} over the ${money(limit)} job limit, so only the Supervisor can decide. They manage it under the plan (the maintenance budget pays and work starts)${canAskLandlord(j, L) ? ', approve it and send it to the landlord (you then send the landlord a quote)' : ''}, or decline it.`}>
           {!j.landlordOk && <Btn block icon={<Mail size={16} />} onClick={() => setM('email')}>Email landlord</Btn>}
           <Btn block kind="outline" icon={<MessageSquareReply size={16} />} onClick={() => setM('reply')}>Log landlord reply</Btn>
           <Btn block kind="ghost" icon={<BellRing size={16} />} onClick={() => remindSupervisor(s, `${j.title} (${money(j.price)})`)}>Remind {SUPERVISOR}</Btn></ActionCard>
-          : <ActionCard tone={j.status === 'Declined' ? 'neutral' : 'ok'} title="Decided" text={j.status === 'Declined' ? `Declined by ${SUPERVISOR}: ${j.declined}` : `${SUPERVISOR} approved it. The job is now ${j.status.toLowerCase()}. Carry on from the job page.`}><Btn block icon={<ArrowRight size={16} />} onClick={() => s.go('jobs', id)}>Open job</Btn></ActionCard>}
-        {waiting && <DemoAnswer><Btn sm kind="success" icon={<CheckCircle2 size={14} />} onClick={() => approveJob(s, j, L)}>Approve {money(j.price)}</Btn><Btn sm kind="outline" icon={<XCircle size={14} />} onClick={() => setM('decline')}>Decline</Btn></DemoAnswer>}
+          : <ActionCard tone={j.status === 'Declined' ? 'neutral' : 'ok'} title="Decided" text={j.status === 'Declined' ? `Declined by ${SUPERVISOR}: ${j.declined}` : j.approval === 'Landlord' ? `${SUPERVISOR} approved it and sent it to ${ll?.name}. The plan covers ${money(cv.covered)}, ${ll?.name} pays ${money(cv.pays)}. Next, send ${ll?.name} a quote from the job page.` : `${SUPERVISOR} approved it and it is managed under the plan. The job is now ${j.status.toLowerCase()}. Carry on from the job page.`}><Btn block icon={<ArrowRight size={16} />} onClick={() => s.go('jobs', id)}>Open job</Btn></ActionCard>}
+        {waiting && <DemoAnswer><DecisionButtons j={j} sm /></DemoAnswer>}
         {ll && <Card title="Landlord"><div className="flex"><Avatar name={ll.name} size="md" /><div className="stack grow"><button className="link" style={{ textAlign: 'left' }} onClick={() => s.go('landlords', ll.id)}>{ll.name}</button><span className="caption">{ll.plan}% plan · {ll.phone}</span></div></div><div className="flex"><Btn sm kind="outline" icon={<Phone size={14} />} onClick={() => s.toast('Calling ' + ll.phone)}>Call</Btn><Btn sm kind="outline" icon={<Mail size={14} />} onClick={() => setM('email')}>Email</Btn></div>{sortComms(j.comms)[0]?.dir === 'in' && <Note>Last message is from the landlord.</Note>}</Card>}
         <Card title="Budgets for this landlord">{lb?.props.map(x => { const pc = Math.round(x.used / (x.budget || 1) * 100); return <div key={x.id} className="stack" style={{ gap: 5 }}><span className="flex between"><b className="small" style={{ color: 'var(--text-primary)' }}>{x.address}</b><span className="caption">{pc}%</span></span><Bar value={pc} tone={budgetTone(pc)} /></div>; })}</Card>
         <HomeCard id={j.property} />
       </div>
     </div>
-    {m === 'decline' && <Reason danger title="Supervisor declines" sub="You are told. The budget is not touched." cta="Decline" options={['Too expensive, get another quote', 'Landlord said no', 'Not urgent, wait', 'Landlord will fix it themselves']} onClose={() => setM('')} onDone={r => { jobEvent(s, id, `Declined by Supervisor: ${r}`, { status: 'Declined', declined: r }, SUPERVISOR); s.log(`${SUPERVISOR} declined ${j.title}: ${r}`, 'Sent to Supervisor'); s.toast('Declined. The budget was not touched.'); setM(''); }} />}
+    {m === 'decline' && <DeclineJob j={j} onClose={() => setM('')} />}
     {m === 'email' && <CommModal mode="Email" to={ll?.email} presetSubject={`Repair approval needed · ${p.address}`} presetText={`Hello ${ll?.name.split(' ')[0]},\n\n${j.title} at ${p.address} needs a repair at ${money(j.price)}. This is over your ${money(limit)} job limit, so we need your OK before we book it.\n\nYour repair budget for this property will be ${after}% used after this job.\n\nThank you,\n${ME_NAME}, LSP`} onClose={() => setM('')} onSave={cm => { addComm(cm, `Emailed ${ll?.name} about ${j.title}`); setM(''); setTab('comms'); }} />}
     {m === 'reply' && <Reason title="Log the landlord's reply" sub="Saved with today's date and time. The Supervisor sees it." cta="Save reply" label="What did they say?" options={['Landlord said yes, go ahead', 'Landlord said no', 'Landlord wants more photos', 'Landlord wants a second quote']} onClose={() => setM('')} onDone={r => { addComm({ id: 'cm' + Date.now(), at: nowStamp(), by: ll?.name ?? 'Landlord', channel: 'Email', dir: 'in', subject: 'Reply from landlord', text: r }, r.includes('yes') ? `${ll?.name} said yes to ${j.title}` : `Saved reply from ${ll?.name}`); setM(''); setTab('comms'); }} />}
   </>;

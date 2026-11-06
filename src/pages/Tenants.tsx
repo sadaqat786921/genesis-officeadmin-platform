@@ -8,12 +8,15 @@ import { ActionCard, Avatar, Btn, Card, Chip, CommsLog, DetailHead, DocRow, Fiel
 import { PageHeader, crumbsFor } from '../Shell';
 import { BookInspectionModal, HomeCard, NewJobModal, PaymentModal, adminName, firstName } from './shared';
 import { JobTable, certTone } from './tables';
+import { DamageCard, DamagePage } from './Damage';
+import { DAMAGE_OPEN } from '../damage';
 
 const statusTone = (st: TenantStatus) => ({ Live: 'ok', 'Moving out': 'warn', 'Moved out': 'neutral' } as const)[st];
 
 export function Tenants() {
   const s = useStore();
   if (s.detail && s.tenants.some(t => t.id === s.detail)) return <TenantPage id={s.detail} />;
+  if (s.detail && s.damages.some(d => d.id === s.detail)) return <DamagePage id={s.detail} />;
   return <TenantList />;
 }
 
@@ -59,7 +62,7 @@ export function rentLedger(t: Tenant, row?: RentRow) {
   return out.reverse();
 }
 
-type TTab = 'overview' | 'rent' | 'kyc' | 'home' | 'comms' | 'issues' | 'moveout';
+type TTab = 'overview' | 'rent' | 'kyc' | 'home' | 'comms' | 'issues' | 'damage' | 'moveout';
 function TenantPage({ id }: { id: string }) {
   const s = useStore(); const L = useLookups(); const t = s.tenants.find(x => x.id === id)!;
   const [tab, setTab] = useState<TTab>(t.status === 'Live' ? 'overview' : 'moveout');
@@ -75,7 +78,7 @@ function TenantPage({ id }: { id: string }) {
   const sys = (text: string): Comm => ({ id: 'cm' + Date.now() + Math.random(), at: nowStamp(), by: ME_NAME, channel: 'System', text });
   const remind = () => { if (!row) return; s.setRent(rs2 => rs2.map(x => x.id === row.id ? { ...x, reminders: [{ at: nowStamp(), by: ME_NAME }, ...x.reminders] } : x)); upd({}, `Rent reminder sent to ${t.name}`, { id: 'cm' + Date.now(), at: nowStamp(), by: ME_NAME, channel: 'Email', dir: 'out', subject: 'Rent reminder', text: `${money(owed)} rent is ${rs?.tone === 'err' ? 'late' : 'due'}. Please pay as soon as you can.` }); };
   const mo = t.moveOut;
-  const tabs: { id: TTab; label: string; count?: number }[] = [{ id: 'overview', label: 'Overview' }, { id: 'rent', label: 'Rent' }, { id: 'kyc', label: 'KYC & documents' }, { id: 'home', label: 'Home' }, { id: 'comms', label: 'Communication', count: t.comms.length }, { id: 'issues', label: 'Issues', count: issues.length }, ...(mo ? [{ id: 'moveout' as TTab, label: 'Move-out' }] : [])];
+  const tabs: { id: TTab; label: string; count?: number }[] = [{ id: 'overview', label: 'Overview' }, { id: 'rent', label: 'Rent' }, { id: 'kyc', label: 'KYC & documents' }, { id: 'home', label: 'Home' }, { id: 'comms', label: 'Communication', count: t.comms.length }, { id: 'issues', label: 'Issues', count: issues.length }, { id: 'damage', label: 'Damage', count: s.damages.filter(d => d.tenant === t.id && DAMAGE_OPEN.includes(d.status)).length || undefined }, ...(mo ? [{ id: 'moveout' as TTab, label: 'Move-out' }] : [])];
   return <>
     <PageHeader crumbs={crumbsFor('tenants', s.go, t.name)} back={() => s.go('tenants')} title={t.name}
       action={<div className="flex">{t.status !== 'Moved out' && <Btn kind="outline" icon={<Wrench size={16} />} onClick={() => setM('issue')}>Log an issue</Btn>}{t.status === 'Live' && <Btn icon={<DoorOpen size={16} />} onClick={() => setM('moveout')}>Schedule move-out</Btn>}</div>} />
@@ -141,6 +144,7 @@ function TenantPage({ id }: { id: string }) {
 
     {tab === 'issues' && <Card title="Issues raised" sub="Repairs the tenant reported and how they were fixed." action={t.status !== 'Moved out' && <Btn sm icon={<Plus size={14} />} onClick={() => setM('issue')}>Log an issue</Btn>}><JobTable list={issues} hideHome /></Card>}
 
+    {tab === 'damage' && <DamageCard tenant={t} />}
     {tab === 'moveout' && mo && <>
       <Card><HSteps items={MOVE_OUT_STEPS} at={mo.step === 4 ? 5 : mo.step + 1} /></Card>
       <div className="dgrid">
