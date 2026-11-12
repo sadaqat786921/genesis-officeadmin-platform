@@ -57,6 +57,9 @@ const SEED_RECORDS: NrlRecord[] = [
   // Not checked yet: payouts blocked
   { landlord: 'L7', abroad: 'Not sure', country: 'Canada (Toronto)', since: 'Oct 2026', status: 'Review pending', reason: 'Told James on 10 Oct he is moving to Toronto for work. Not checked yet.',
     calcs: [], history: [ev('10 Oct 2026, 16:20', 'James Carter', 'Simon said he is moving to Toronto this month. Set to Review pending.')] },
+  // Asked by an Office Admin: waiting for the Supervisor
+  { landlord: 'L4', abroad: 'Yes', country: 'Qatar (Doha)', since: 'Oct 2026', status: 'Review pending', reason: 'Moved to Doha in October for work.', asked: '15 Oct 2026, 09:10',
+    calcs: [], history: [ev('15 Oct 2026, 09:05', 'Liam Murphy', 'Tom told us he moved to Doha this month. Set to Review pending.'), ev('15 Oct 2026, 09:10', 'Liam Murphy', 'Asked the Supervisor to decide: suggest Tax kept back.')] },
   // 5. Joint owners treated differently: David lives in the UK, his sister Anna owns half of 22 Oak Avenue and lives in Australia
   { landlord: 'L2', abroad: 'No', status: 'UK resident', decidedBy: 'Sarah Khan', decidedAt: '15 Jan 2026, 10:00', reason: 'Lives in London. His joint owner on 22 Oak Avenue lives abroad (see the property).',
     calcs: [stamp(calc('Aug 2026', 432), '4 Sep 2026, 15:10'), stamp(calc('Sep 2026', 432), '5 Oct 2026, 10:05'), stamp(calc('Oct 2026', 432), '14 Oct 2026, 16:35')],
