@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Landmark, FileText, Download, Upload, CalendarClock, Pencil, Percent, Lock, History as HistoryIcon, Check, Building2, Wallet } from 'lucide-react';
+import { LeaseTaxCard } from './Tax';
+import { useNrl, leaseTaxOf, nrlState } from '../nrl';
 import { useStore, useLookups, money } from '../store';
 import { PLAN, ME_NAME, daysFrom, nowStamp, parseDate, type Landlord, type LeasePay, type Property, type Plan } from '../data';
 import { feeOf, pctText, vatActive, isLeased, LSP_NAME, MAINT_SHARE, type VatSetting } from '../pricing';
@@ -80,16 +82,20 @@ export function AllowanceCard({ l }: { l: Landlord }) {
 }
 
 /* ---------------- leased by LSP ---------------- */
-export function leaseState(x: LeasePay) {
-  const left = x.amount - x.paid; const d = daysFrom(x.due);
+/** Tax LSP keeps back from one lease payment when the owner lives abroad (paid to HMRC, never owed to the owner). */
+export const leaseTax = (s: S, x: LeasePay) => leaseTaxOf(nrlState(), s.properties.find(p => p.id === x.property)?.owner, x);
+/** What the owner is owed for one month: the lease rent minus any tax kept back. */
+export const leaseDue = (s: S, x: LeasePay) => x.amount - leaseTax(s, x);
+export function leaseState(x: LeasePay, tax = 0) {
+  const left = x.amount - tax - x.paid; const d = daysFrom(x.due);
   if (left <= 0) return { label: 'Paid', tone: 'ok' as const };
   if (x.paid > 0) return d < 0 ? { label: `Part-paid · ${money(left)} late`, tone: 'err' as const } : { label: 'Part-paid', tone: 'warn' as const };
   if (d < 0) return { label: `Late · ${-d} days`, tone: 'err' as const };
   return { label: d === 0 ? 'Due today' : 'Due ' + x.due.replace(' 2026', ''), tone: d <= 7 ? 'warn' as const : 'neutral' as const };
 }
 export function payOwner(s: S, x: LeasePay, a: number, date: string, ref: string, address: string) {
-  s.setLeasePays(ls => ls.map(y => y.id === x.id ? { ...y, paid: Math.min(y.amount, y.paid + a), history: [...y.history, { date, amount: a, ref }] } : y));
-  const left = x.amount - x.paid - a;
+  s.setLeasePays(ls => ls.map(y => y.id === x.id ? { ...y, paid: Math.min(leaseDue(s, y), y.paid + a), history: [...y.history, { date, amount: a, ref }] } : y));
+  const left = leaseDue(s, x) - x.paid - a;
   s.log(`Recorded lease payment of ${money(a)} to the owner of ${address} for ${x.month}${left > 0 ? `. ${money(left)} still owed` : ''}`, 'Rent & Invoices');
   s.toast(left > 0 ? `${money(a)} saved. ${money(left)} still owed to the owner.` : `${money(a)} saved. ${x.month} paid in full.`);
 }
@@ -118,9 +124,9 @@ export function LeaseFromCard({ p }: { p: Property }) {
 }
 
 export function LeaseTab({ p }: { p: Property }) {
-  const s = useStore(); const ls = p.lease!; const [pay, setPay] = useState<string | null>(null); const [up, setUp] = useState(false);
+  const s = useStore(); useNrl(); const ls = p.lease!; const [pay, setPay] = useState<string | null>(null); const [up, setUp] = useState(false);
   const rows = s.leasePays.filter(x => x.property === p.id);
-  const owed = rows.reduce((a, x) => a + x.amount - x.paid, 0);
+  const owed = rows.reduce((a, x) => a + leaseDue(s, x) - x.paid, 0);
   const x = pay ? rows.find(r => r.id === pay) : undefined;
   return <>
     <div className="grid g4">
@@ -138,6 +144,7 @@ export function LeaseTab({ p }: { p: Property }) {
       </div>
       <div className="col">
         <LeaseFromCard p={p} />
+        <LeaseTaxCard p={p} />
         <Card title="Who is responsible"><KV rows={[['Owner', ls.ownerDoes], [LSP_NAME, ls.lspDoes]]} /><span className="caption">Repairs LSP covers use the normal approval flow and this lease's budget. Owner repairs go to the owner to approve.</span></Card>
         <Card title="Lease documents" action={<Btn sm kind="ghost" icon={<Upload size={14} />} onClick={() => setUp(true)}>Replace</Btn>}>
           {ls.doc ? <div className="item"><span className="tile t-brand"><FileText size={16} /></span><div className="stack grow"><b>{ls.doc}</b><span className="caption">Signed lease · added {ls.activated}</span></div><Btn sm kind="ghost" icon={<Download size={14} />} onClick={() => s.toast('Lease downloaded')}>PDF</Btn></div> : <Note tone="warn">No signed lease uploaded yet.</Note>}
@@ -145,20 +152,20 @@ export function LeaseTab({ p }: { p: Property }) {
         <Card title="History"><Timeline items={[{ at: ls.activated, text: `Leased by LSP from ${ls.start}`, by: ls.by }, ...rows.flatMap(r => r.history.map(h => ({ at: h.date, text: `Paid ${money(h.amount)} to the owner for ${r.month} · ${h.ref}` })))].sort((a, b) => parseDate(b.at).getTime() - parseDate(a.at).getTime())} /></Card>
       </div>
     </div>
-    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={x.amount - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, p.address); setPay(null); }} />}
+    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={leaseDue(s, x) - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, p.address); setPay(null); }} />}
     {up && <Modal title="Replace the signed lease" sub="The earlier file is kept in the history." onClose={() => setUp(false)} footer={<><Btn kind="outline" onClick={() => setUp(false)}>Cancel</Btn><Btn icon={<Upload size={16} />} onClick={() => { s.setProperties(ps => ps.map(y => y.id === p.id ? { ...y, lease: { ...y.lease!, doc: 'lease-' + p.address.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-v2.pdf' } } : y)); s.log(`Replaced the signed lease for ${p.address}`, 'Properties'); s.toast('Lease replaced. The earlier file is kept.'); setUp(false); }}>Upload</Btn></>}><button type="button" className="dropzone"><Upload size={20} /><b>Choose the signed lease (PDF)</b></button></Modal>}
   </>;
 }
 
 export function OwnerPayTable({ list: all, onPay, hideHome }: { list: LeasePay[]; onPay: (id: string) => void; hideHome?: boolean }) {
-  const s = useStore(); const L = useLookups(); const [f, setF] = useFlt();
-  const list = applyFlt(all, f, { text: x => `${x.month} ${L.prop(x.property)?.address ?? ''} ${L.landlord(L.prop(x.property)?.owner)?.name ?? ''}`, type: x => leaseState(x).label.split(' ·')[0].replace(/ \d.*$/, ''), date: x => x.due });
-  return <>{all.length > 2 && <FilterBar f={f} set={setF} placeholder="Search month, home or owner" years={yearsOf(all, x => x.due)} types={[...new Set(all.map(x => leaseState(x).label.split(' ·')[0].replace(/ \d.*$/, '')))]} typeLabel="Any status" shown={list.length} total={all.length} />}
-    <div className="tablewrap"><table className="t"><thead><tr><th>Month</th>{!hideHome && <th>Home · owner</th>}<th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Paid on · ref</th><th>Status</th><th /></tr></thead><tbody>
-      {list.map(x => { const st = leaseState(x); const p = L.prop(x.property); const left = x.amount - x.paid; const last = x.history[x.history.length - 1]; return <tr key={x.id} onClick={() => hideHome ? undefined : s.go('properties', x.property)} className={hideHome ? 'static' : ''}>
+  const s = useStore(); const L = useLookups(); const [f, setF] = useFlt(); useNrl();
+  const list = applyFlt(all, f, { text: x => `${x.month} ${L.prop(x.property)?.address ?? ''} ${L.landlord(L.prop(x.property)?.owner)?.name ?? ''}`, type: x => leaseState(x, leaseTax(s, x)).label.split(' ·')[0].replace(/ \d.*$/, ''), date: x => x.due });
+  return <>{all.length > 2 && <FilterBar f={f} set={setF} placeholder="Search month, home or owner" years={yearsOf(all, x => x.due)} types={[...new Set(all.map(x => leaseState(x, leaseTax(s, x)).label.split(' ·')[0].replace(/ \d.*$/, '')))]} typeLabel="Any status" shown={list.length} total={all.length} />}
+    <div className="tablewrap"><table className="t"><thead><tr><th>Month</th>{!hideHome && <th>Home · owner</th>}<th>Due</th><th>Lease rent</th><th>Tax kept back</th><th>Paid to owner</th><th>Balance</th><th>Paid on · ref</th><th>Status</th><th /></tr></thead><tbody>
+      {list.map(x => { const tx = leaseTax(s, x); const st = leaseState(x, tx); const p = L.prop(x.property); const left = x.amount - tx - x.paid; const last = x.history[x.history.length - 1]; return <tr key={x.id} onClick={() => hideHome ? undefined : s.go('properties', x.property)} className={hideHome ? 'static' : ''}>
         <td><span className="cell"><span className="tile t-brand" style={{ width: 32, height: 32 }}><Landmark size={15} /></span><b className="strong">{x.month}</b></span></td>
         {!hideHome && <td>{p?.address}<div className="caption">{L.landlord(p?.owner)?.name}</div></td>}
-        <td>{x.due}</td><td>{money(x.amount)}</td><td>{money(x.paid)}</td><td>{left > 0 ? <b>{money(left)}</b> : '—'}</td>
+        <td>{x.due}</td><td>{money(x.amount)}</td><td>{tx ? <span className="stack"><b className="small">{money(tx)}</b><span className="caption">to HMRC</span></span> : <span className="muted">—</span>}</td><td>{money(x.paid)}</td><td>{left > 0 ? <b>{money(left)}</b> : '—'}</td>
         <td>{last ? <span className="stack"><b className="small" style={{ color: 'var(--text-primary)' }}>{last.date}</b><span className="caption">{last.ref}</span></span> : <span className="muted">—</span>}</td>
         <td><Chip tone={st.tone}>{st.label}</Chip></td>
         <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>{left > 0 && <Btn sm onClick={() => onPay(x.id)}>Record</Btn>}</td></tr>; })}
@@ -167,11 +174,11 @@ export function OwnerPayTable({ list: all, onPay, hideHome }: { list: LeasePay[]
 
 /** Rent & Invoices tab: everything LSP pays to owners of leased homes. */
 export function OwnerPayments() {
-  const s = useStore(); const L = useLookups(); const [pay, setPay] = useState<string | null>(null);
+  const s = useStore(); const L = useLookups(); const [pay, setPay] = useState<string | null>(null); useNrl();
   const x = pay ? s.leasePays.find(r => r.id === pay) : undefined;
-  return <Card title="Owner lease payments" sub="Lease rent LSP pays to owners of homes leased by LSP. Separate from tenant rent: an empty home or late tenant rent does not change it.">
+  return <Card title="Owner lease payments" sub="Lease rent LSP pays to owners of homes leased by LSP. Separate from tenant rent: an empty home or late tenant rent does not change it. When the owner lives abroad, LSP keeps back tax and pays it to HMRC.">
     <OwnerPayTable list={s.leasePays} onPay={setPay} />
-    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={x.amount - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, L.prop(x.property)?.address ?? ''); setPay(null); }} />}
+    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={leaseDue(s, x) - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, L.prop(x.property)?.address ?? ''); setPay(null); }} />}
   </Card>;
 }
 

@@ -371,11 +371,13 @@ export const SPEND_CHART = [{ m: 'May', v: 3.1 }, { m: 'Jun', v: 4.4 }, { m: 'Ju
 
 /* ---------- property management plans (saved snapshots, never changed after saving) ---------- */
 export interface PlanTable { title: string; cols: string[]; rows: string[][]; empty: string }
-export interface PlanData { ref: string; address: string; area: string; landlord: string[]; admin: string; overview: [string, string][]; tables: PlanTable[]; missing: { text: string; blocks: boolean }[] }
+/** One room as printed in the plan (from the property's Rooms tab). */
+export interface PlanRoom { name: string; floor: string; size: string; area: string; details: [string, string][]; condition: string; photo: string; notes?: string }
+export interface PlanData { ref: string; address: string; area: string; landlord: string[]; admin: string; overview: [string, string][]; tables: PlanTable[]; missing: { text: string; blocks: boolean }[]; rooms?: PlanRoom[] }
 export interface PlanVersion { id: string; property: string; version: number; at: string; by: string; data: PlanData }
 
 /* ---------- requests sent to the Supervisor (things an Office Admin cannot do alone) ---------- */
-export type ReqKind = 'New landlord' | 'Unlock record' | 'Plan change' | 'Pause contractor' | 'Other';
+export type ReqKind = 'New landlord' | 'Unlock record' | 'Plan change' | 'Pause contractor' | 'Tax status' | 'Other';
 export interface SupReq { id: string; kind: ReqKind; from?: string; title: string; about: string; at: string; status: 'Waiting' | 'Done' | 'Declined'; reply?: string; answered?: string; link?: { route: string; id?: string }; data?: Record<string, string> }
 export const REQUESTS: SupReq[] = [
   { id: 'Q1', kind: 'New landlord', title: 'Create landlord account: Imran Ali', about: '3 terraced houses near Mill Lane, Tottenham, Tottenham, London N17 · wants the 20% plan', at: '14 Oct 2026, 16:20', status: 'Waiting', link: { route: 'enquiries', id: 'E7' }, data: { name: 'Imran Ali', email: 'imran.ali@mail.co.uk', phone: '07700 901007', plan: '20', enquiry: 'E7' } },
@@ -463,8 +465,8 @@ TENANTS.push({ id: 'T13', name: 'Grace Adeyemi', email: 'grace.adeyemi@mail.co.u
 SAFETY.push(cert('SC40', 'P15', 'Gas safety', '28 May 2026, 10:00', '28 May 2027', { contractor: 'C1' }), cert('SC41', 'P15', 'Electrical (EICR)', '27 May 2026, 14:00', '27 May 2031', { contractor: 'C5' }), cert('SC42', 'P15', 'Energy (EPC)', '20 Apr 2026, 09:00', '20 Apr 2036'));
 RENT.push({ id: 'R13', tenant: 'T13', month: 'Oct 2026', due: '1 Oct 2026', amount: 1800, paid: 1800, history: [{ date: '1 Oct 2026', amount: 1800, note: 'Bank transfer' }], reminders: [] });
 export const LEASE_PAYS: LeasePay[] = [
-  { id: 'LP1', property: 'P15', month: 'Aug 2026', due: '1 Aug 2026', amount: 1200, paid: 1200, history: [{ date: '1 Aug 2026', amount: 1200, ref: 'BACS 88213' }] },
-  { id: 'LP2', property: 'P15', month: 'Sep 2026', due: '1 Sep 2026', amount: 1200, paid: 1200, history: [{ date: '1 Sep 2026', amount: 1200, ref: 'BACS 90144' }] },
+  { id: 'LP1', property: 'P15', month: 'Aug 2026', due: '1 Aug 2026', amount: 1200, paid: 960, history: [{ date: '1 Aug 2026', amount: 960, ref: 'BACS 88213 · £240 tax kept back' }] },
+  { id: 'LP2', property: 'P15', month: 'Sep 2026', due: '1 Sep 2026', amount: 1200, paid: 960, history: [{ date: '1 Sep 2026', amount: 960, ref: 'BACS 90144 · £240 tax kept back' }] },
   { id: 'LP3', property: 'P15', month: 'Oct 2026', due: '1 Oct 2026', amount: 1200, paid: 700, history: [{ date: '2 Oct 2026', amount: 700, ref: 'BACS 91877' }] },
   { id: 'LP4', property: 'P15', month: 'Nov 2026', due: '1 Nov 2026', amount: 1200, paid: 0, history: [] },
 ];

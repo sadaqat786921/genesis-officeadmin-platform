@@ -5,7 +5,7 @@ import { parseDate, PLAN, type Property, type Tone } from '../data';
 import { ME_NAME } from '../data';
 import { Btn, Card, Chip, Empty, Stat, Tabs, Note, FilterBar, applyFlt, useFlt, yearsOf } from '../ui';
 import { feeOf, isLeased, LSP_NAME } from '../pricing';
-import { OwnerPayTable, payOwner } from './Money';
+import { OwnerPayTable, payOwner , leaseDue } from './Money';
 import { PaymentModal } from './shared';
 import { InvoiceTable } from './tables';
 import { downloadPdf } from './docs';
@@ -135,7 +135,7 @@ function LeasedMoney({ p }: { p: Property }) {
   const rows = s.rent.filter(r => tenants.some(t => t.id === r.tenant));
   const out = s.leasePays.filter(x => x.property === p.id);
   const occ = tenants.reduce((a, t) => a + t.rent, 0) || p.rent;
-  const inOct = rows.reduce((a, r) => a + r.paid, 0); const owedOwner = out.reduce((a, x) => a + x.amount - x.paid, 0);
+  const inOct = rows.reduce((a, r) => a + r.paid, 0); const owedOwner = out.reduce((a, x) => a + leaseDue(s, x) - x.paid, 0);
   const jids = s.jobs.filter(j => j.property === p.id).map(j => j.id);
   const invs = s.invoices.filter(i => (i.job && jids.includes(i.job)) || i.site === p.address);
   const x = pay ? out.find(r => r.id === pay) : undefined;
@@ -152,6 +152,6 @@ function LeasedMoney({ p }: { p: Property }) {
       <Card title="Lease rent to the owner" sub="Paid by LSP on its own schedule."><OwnerPayTable list={out} onPay={setPay} hideHome /></Card>
     </div>
     <Card title="Invoices for this home" sub="Repair invoices for this home."><InvoiceTable list={invs} /></Card>
-    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={x.amount - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, p.address); setPay(null); }} />}
+    {x && <PaymentModal title={`Record payment to the owner · ${x.month}`} owed={leaseDue(s, x) - x.paid} onClose={() => setPay(null)} onSave={(a, d, n) => { payOwner(s, x, a, d, n, p.address); setPay(null); }} />}
   </>;
 }

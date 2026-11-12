@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  LayoutDashboard, ArrowRightLeft, ListChecks, Send, Mail, User, KeyRound, UserCheck, Home, UserPlus, Briefcase, Wrench, ClipboardCheck, HardHat, ArrowLeft,
+  Globe2, LayoutDashboard, ArrowRightLeft, ListChecks, Send, Mail, User, KeyRound, UserCheck, Home, UserPlus, Briefcase, Wrench, ClipboardCheck, HardHat, ArrowLeft,
   CircleCheck, ShieldCheck, PoundSterling, History, Lock, FileBarChart, PanelLeft, LogOut, Search, Bell, CalendarDays, ChevronRight, ArrowRight, Eye, EyeOff, ShieldAlert,
 } from 'lucide-react';
+import { useTaxAlerts } from './pages/Tax';
 import { useStore, useLookups, type Route } from './store';
 import { LET_STAGES, daysFrom, ME_NAME, SUPERVISOR } from './data';
 import { Btn, IBtn, Note } from './ui';
@@ -11,15 +12,16 @@ export const NAV: { group: string; items: { id: Route; label: string; icon: type
   { group: 'My Work', items: [{ id: 'today', label: 'My Day', icon: LayoutDashboard }, { id: 'tasks', label: 'My Tasks', icon: ListChecks }, { id: 'enquiries', label: 'Enquiries', icon: Mail }, { id: 'switch', label: 'Planned Switch', icon: ArrowRightLeft }] },
   { group: 'Homes & People', items: [{ id: 'landlords', label: 'Landlords', icon: User }, { id: 'lettings', label: 'Lettings', icon: KeyRound }, { id: 'tenants', label: 'Tenants', icon: UserCheck }, { id: 'properties', label: 'Properties', icon: Home }] },
   { group: 'Work', items: [{ id: 'clients', label: 'Clients', icon: Briefcase }, { id: 'contractors', label: 'Contractors', icon: HardHat }, { id: 'jobs', label: 'Jobs', icon: Wrench }, { id: 'inspections', label: 'Inspections', icon: ClipboardCheck }] },
-  { group: 'Checks & Money', items: [{ id: 'safety', label: 'Safety & Compliance', icon: ShieldCheck }, { id: 'rent', label: 'Rent & Invoices', icon: PoundSterling }] },
+  { group: 'Checks & Money', items: [{ id: 'safety', label: 'Safety & Compliance', icon: ShieldCheck }, { id: 'rent', label: 'Rent & Invoices', icon: PoundSterling }, { id: 'tax', label: 'Overseas Tax', icon: Globe2 }] },
   { group: 'Supervisor & Records', items: [{ id: 'requests', label: 'Sent to Supervisor', icon: Send }, { id: 'records', label: 'My History', icon: History }] },
 ];
 export const LABEL: Record<Route, string> = Object.fromEntries(NAV.flatMap(g => g.items.map(i => [i.id, i.label]))) as Record<Route, string>;
 const GROUP: Record<Route, string> = Object.fromEntries(NAV.flatMap(g => g.items.map(i => [i.id, g.group]))) as Record<Route, string>;
 
 export function useCounts() {
-  const s = useStore();
+  const s = useStore(); const tax = useTaxAlerts(s);
   return {
+    tax: tax.blocked.length,
     tasks: s.tasks.filter(t => !t.done && (t.late || t.due === '15 Oct 2026')).length,
     enquiries: s.enquiries.filter(e => e.stage === 'Assigned').length,
     lettings: s.applicants.filter(a => !a.rejected && (a.stage <= 3 || a.stage === 5)).length,

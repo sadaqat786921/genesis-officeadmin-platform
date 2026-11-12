@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Mail, UserCheck, TriangleAlert, Home, Wrench, ArrowRight, Plus, CalendarDays, Clock, Image as ImageIcon, Send, BellRing, Check, KeyRound, FileText, ListChecks } from 'lucide-react';
+import { useTaxAlerts } from './Tax';
 import { useStore, useLookups, money, rentStatus, type Route } from '../store';
 import { daysFrom, nowStamp, ME, ME_NAME, SUPERVISOR } from '../data';
 import { Btn, Card, Chip, Drawer, IBtn, KV, Kpi, Note, Tabs } from '../ui';
@@ -22,7 +23,9 @@ export default function Today() {
   const myTasks = s.tasks.filter(t => !t.done).sort((a, b) => daysFrom(a.due) - daysFrom(b.due));
   const today = myTasks.filter(t => t.late || daysFrom(t.due) <= 1);
 
+  const taxA = useTaxAlerts(s);
   const items: Item[] = [
+    ...taxA.blocked.map(({ l, why }) => ({ kind: 'todo' as const, t: `Payout blocked · ${l.name}`, d: `Overseas tax: ${why}`, next: why.startsWith('Tax status') ? 'Ask the Supervisor to decide' : why.startsWith('HMRC') ? "Get HMRC's letter and upload it" : "Enter the accountant's figure", due: '20 Oct', r: 'tax' as Route, id: l.id, tone: 'err' as const })),
     ...s.jobs.filter(j => j.urgent && !DONE_JOB.includes(j.status)).map(j => ({ kind: 'overdue' as const, t: 'Emergency: ' + j.title, d: L.prop(j.property)?.address ?? '', next: j.contractor ? 'Make sure the contractor is there today' : 'Assign a contractor now', due: 'Today', r: 'jobs' as Route, id: j.id, tone: 'err' as const })),
     ...s.tasks.filter(t => t.late && !t.done).map(t => ({ kind: 'overdue' as const, t: t.title, d: `${t.area} · task`, next: 'Do it or move the date', due: t.due.replace(' 2026', ''), r: 'tasks' as Route, id: t.id, tone: 'err' as const })),
     ...late.map(r => { const t = L.tenant(r.tenant); return { kind: 'overdue' as const, t: `Rent late · ${money(r.amount - r.paid)}`, d: `${t?.name}, ${L.prop(t?.property)?.address}`, next: 'Send a reminder or call', due: r.due.replace(' 2026', ''), r: 'rent' as Route, id: r.id, tone: 'err' as const }; }),

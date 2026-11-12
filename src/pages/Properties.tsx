@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, Home, Building2, KeyRound, Pencil, CheckCircle2, ShieldCheck, Wrench, ArrowRight, ClipboardCheck, Users, Wallet, Megaphone, Download, History as HistoryIcon, FileText } from 'lucide-react';
+import { OwnersCard } from './Tax';
 import { useStore, useLookups, money, rentStatus, budgetTone } from '../store';
 import { CERT_KINDS, daysFrom, parseDate, type Property } from '../data';
 import { Avatar, Bar, Btn, Card, Chip, Field, KV, Kpi, MiniSearch, Modal, Note, PageTabs, Select, Stat, Tabs, Timeline, Empty } from '../ui';
@@ -107,6 +108,7 @@ function PropertyPage({ id }: { id: string }) {
           {!upcoming.length && !last && <span className="caption">No inspections yet.</span>}</div></Card>}
       {p.managed && <FeeCard p={p} />}
       {leased && <LeaseFromCard p={p} />}
+      {p.managed && <OwnersCard p={p} />}
       {p.managed && <PlanCard p={p} />}
       {p.managed && <Card title="Maintenance budget" sub={budgetSource(s, p, L.landlord(p.owner))} action={<Btn sm kind="ghost" onClick={() => setTab('budget')}>Open</Btn>}><div className="flex between"><span className="metric">{pct}%</span><span className="small">{money(p.used)} of {money(p.budget)} used</span></div><Bar value={pct} tone={budgetTone(pct)} /><span className="caption">{money(p.budget - p.used)} left. Alerts at 70%, 90% and 100%.</span></Card>}
       {!p.managed && <Card title="Client"><KV rows={[['Client', L.client(p.owner)?.name ?? ''], ['Contact', L.client(p.owner)?.contact ?? ''], ['Phone', L.client(p.owner)?.phone ?? ''], ['Invoice terms', L.client(p.owner)?.terms ?? '']]} /><Note>The client looks after tenants and rent. LSP sends contractors, quotes and invoices.</Note></Card>}

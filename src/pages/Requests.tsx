@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { CheckCircle2, XCircle, Mail, Wrench, ArrowRight, MessageSquareReply, Phone, BellRing, Send, KeyRound, FileText, Plus, Gauge, Inbox, FlaskConical, UserPlus } from 'lucide-react';
+import { CheckCircle2, XCircle, Mail, Wrench, ArrowRight, MessageSquareReply, Phone, BellRing, Send, KeyRound, FileText, Plus, Gauge, Inbox, FlaskConical, UserPlus, Globe2 } from 'lucide-react';
+import { updateRecord, type NrlStatus } from '../nrl';
 import { useStore, useLookups, money, landlordBudget, budgetTone } from '../store';
 import { PLAN, nowStamp, ME, ME_NAME, SUPERVISOR, type Comm, type ReqKind, type SupReq } from '../data';
 import { ActionCard, Avatar, Bar, Btn, Card, Chip, CommModal, CommsLog, DetailHead, Field, KV, Kpi, Modal, Note, PageTabs, Reason, Select, Tabs, Timeline, Empty, Area, Text, When, sortComms } from '../ui';
@@ -39,11 +40,12 @@ export function answerRequest(s: S, q: SupReq, ok: boolean, reply: string) {
     s.setRequests(rs => rs.map(x => x.id === q.id ? { ...x, link: { route: 'landlords', id: lid } } : x));
     if (q.data.lead) linkLeadLandlord(s, q.data.lead, lid);
   }
+  if (ok && q.kind === 'Tax status' && q.data?.landlord && q.data.status) updateRecord(q.data.landlord, { status: q.data.status as NrlStatus, decidedBy: SUPERVISOR, decidedAt: nowStamp(), reason: q.about, from: '1 Nov 2026', asked: undefined, abroad: q.data.status === 'UK resident' ? 'No' : 'Yes' }, SUPERVISOR, `Decided ${q.data.status} (asked by ${ME_NAME})`);
   s.log(`${SUPERVISOR} ${ok ? 'did' : 'declined'}: ${q.title}${reply ? '. ' + reply : ''}`, 'Sent to Supervisor');
   s.toast(`${SUPERVISOR} ${ok ? 'said yes' : 'said no'}`);
 }
 
-const KIND_ICON: Record<string, ReactNode> = { 'Repair approval': <Wrench size={16} />, 'Tenant review': <KeyRound size={16} />, 'New landlord': <UserPlus size={16} />, 'Unlock record': <FileText size={16} />, 'Plan change': <Gauge size={16} />, 'Pause contractor': <Wrench size={16} />, Other: <Inbox size={16} /> };
+const KIND_ICON: Record<string, ReactNode> = { 'Repair approval': <Wrench size={16} />, 'Tenant review': <KeyRound size={16} />, 'New landlord': <UserPlus size={16} />, 'Unlock record': <FileText size={16} />, 'Plan change': <Gauge size={16} />, 'Pause contractor': <Wrench size={16} />, 'Tax status': <Globe2 size={16} />, Other: <Inbox size={16} /> };
 
 export function Requests() {
   const s = useStore();
@@ -127,7 +129,7 @@ function RequestPage({ id }: { id: string }) {
         {q.status === 'Waiting' ? <ActionCard tone="warn" title={`Waiting for ${SUPERVISOR}`} text="You'll get an alert when it's answered."><Btn block kind="outline" icon={<BellRing size={16} />} onClick={() => remindSupervisor(s, q.title)}>Send a reminder</Btn></ActionCard>
           : <ActionCard tone={q.status === 'Done' ? 'ok' : 'neutral'} title={q.status === 'Done' ? 'Done' : 'Declined'} text={q.reply ?? ''}>{q.link && <Btn block kind="outline" icon={<ArrowRight size={16} />} onClick={() => s.go(q.link!.route as never, q.link!.id)}>Open the record</Btn>}</ActionCard>}
         {q.link && q.status === 'Waiting' && <Card title="About"><Btn kind="ghost" icon={<ArrowRight size={16} />} onClick={() => s.go(q.link!.route as never, q.link!.id)}>Open the record</Btn></Card>}
-        {q.status === 'Waiting' && <DemoAnswer><Btn sm kind="success" icon={<CheckCircle2 size={14} />} onClick={() => answerRequest(s, q, true, q.kind === 'New landlord' ? 'Landlord account created. Login email sent from Outlook.' : 'Done.')}>Supervisor says yes</Btn><Btn sm kind="outline" icon={<XCircle size={14} />} onClick={() => setNo(true)}>Supervisor says no</Btn></DemoAnswer>}
+        {q.status === 'Waiting' && <DemoAnswer><Btn sm kind="success" icon={<CheckCircle2 size={14} />} onClick={() => answerRequest(s, q, true, q.kind === 'New landlord' ? 'Landlord account created. Login email sent from Outlook.' : q.kind === 'Tax status' ? `Tax status set to ${q.data?.status}.` : 'Done.')}>Supervisor says yes</Btn><Btn sm kind="outline" icon={<XCircle size={14} />} onClick={() => setNo(true)}>Supervisor says no</Btn></DemoAnswer>}
       </div>
     </div>
     {no && <Reason danger title="Supervisor's reason" sub="Shown to the Office Admin." cta="Save" options={['Not enough information, call me', 'Not this time', 'Duplicate of an existing record']} onClose={() => setNo(false)} onDone={r => { answerRequest(s, q, false, r); setNo(false); }} />}

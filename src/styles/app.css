@@ -915,7 +915,7 @@ tr.static { cursor: default; } tr.static:hover td { background: none; }
   body.printdoc .paper { border: 0; box-shadow: none; page-break-after: always; }
 }
 /* property management plan */
-.plan-src { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.plan-src { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .plan-src > div { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--border-default); border-radius: var(--r-md); }
 .plan-src b { font-size: 12.5px; }
 .doc-kv.two { grid-template-columns: 170px 1fr; }
@@ -1002,3 +1002,12 @@ tr.static { cursor: default; } tr.static:hover td { background: none; }
 .covsplit > div.ok { background: var(--ok-bg); } .covsplit > div.ok b { color: var(--ok); }
 .covsplit > div.you { background: var(--bg-brand-subtle); } .covsplit > div.you b { color: var(--text-brand); }
 .covsplit .caption { display: inline-flex; gap: 4px; align-items: center; }
+
+/* Rooms in the Property Management Plan */
+.doc-rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.doc-room { display: grid; grid-template-columns: 96px 1fr; gap: 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: 8px; break-inside: avoid; }
+.doc-room-ph { height: 80px; border-radius: 6px; background: var(--bg-subtle) center / cover; }
+.doc-room-meta { font-size: 11px; color: var(--text-tertiary); }
+.doc-room-kv { display: grid; grid-template-columns: 70px 1fr; gap: 1px 8px; font-size: 11px; margin-top: 3px; }
+.doc-room-kv span { color: var(--text-tertiary); }
+@media (max-width: 760px) { .doc-rooms { grid-template-columns: 1fr; } }

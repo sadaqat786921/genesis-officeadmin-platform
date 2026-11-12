@@ -7,9 +7,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 export type Route =
   | 'today' | 'tasks' | 'enquiries' | 'switch' | 'landlords' | 'lettings' | 'tenants' | 'properties' | 'clients'
-  | 'contractors' | 'jobs' | 'inspections' | 'requests' | 'safety' | 'rent' | 'records';
+  | 'contractors' | 'jobs' | 'inspections' | 'requests' | 'safety' | 'rent' | 'tax' | 'records';
 
-export const ROUTES: Route[] = ['today', 'tasks', 'enquiries', 'switch', 'landlords', 'lettings', 'tenants', 'properties', 'clients', 'contractors', 'jobs', 'inspections', 'requests', 'safety', 'rent', 'records'];
+export const ROUTES: Route[] = ['today', 'tasks', 'enquiries', 'switch', 'landlords', 'lettings', 'tenants', 'properties', 'clients', 'contractors', 'jobs', 'inspections', 'requests', 'safety', 'rent', 'tax', 'records'];
 type Setter<T> = (fn: (prev: T[]) => T[]) => void;
 export type PayoutStatus = 'Scheduled' | 'Paid' | 'On hold';
 interface Store {

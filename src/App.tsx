@@ -20,8 +20,9 @@ import { Requests } from './pages/Requests';
 import { Safety } from './pages/Safety';
 import { Rent } from './pages/Rent';
 import { Records } from './pages/Records';
+import { Tax } from './pages/Tax';
 
-const PAGES = { today: Today, tasks: Tasks, enquiries: Enquiries, switch: Switch, landlords: Landlords, lettings: Lettings, tenants: Tenants, properties: Properties, clients: Clients, contractors: Contractors, jobs: Jobs, inspections: Inspections, requests: Requests, safety: Safety, rent: Rent, records: Records };
+const PAGES = { today: Today, tasks: Tasks, enquiries: Enquiries, switch: Switch, landlords: Landlords, lettings: Lettings, tenants: Tenants, properties: Properties, clients: Clients, contractors: Contractors, jobs: Jobs, inspections: Inspections, requests: Requests, safety: Safety, rent: Rent, tax: Tax, records: Records };
 
 const KEY = 'genesis-oa-signed-in';
 const read = () => { try { return sessionStorage.getItem(KEY) === '1'; } catch { return false; } };

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { FileText, Download, Save, Eye, CheckCircle2, AlertTriangle, RefreshCw, ArrowLeft, Mail } from 'lucide-react';
 import { useStore, useLookups, money } from '../store';
-import { CERT_KINDS, PLAN, nowStamp, parseDate, daysFrom, type PlanData, type PlanVersion, type Property } from '../data';
+import { CERT_KINDS, PLAN, nowStamp, parseDate, daysFrom, type PlanData, type PlanVersion, type PlanRoom, type Property } from '../data';
+import { areaM2, areaFt2, roomCover, sizeText } from '../rooms';
 import { ME_NAME } from '../data';
 import { Btn, Card, Chip, Modal, Note, Empty } from '../ui';
 import { DocSheet, downloadPdf } from './docs';
@@ -46,6 +47,11 @@ export function buildPlan(s: S, L: ReturnType<typeof useLookups>, p: Property): 
     ...certs.filter(c => c.contractor && c.status !== 'Valid').map(c => [`${c.kind} visit`, `${L.contractor(c.contractor)?.name} (contractor)`]),
   ];
 
+  const rooms = s.rooms.filter(r => r.property === p.id);
+  if (!rooms.length) missing.push({ text: 'No rooms recorded. Add them on the Rooms tab to show room details and photos in the plan.', blocks: false });
+  const planRooms: PlanRoom[] = rooms.map(r => ({ name: r.name + (r.letRoom ? ` · ${r.letRoom}` : ''), floor: r.floor, size: r.kind === 'Garden' ? sizeText(r) : `${sizeText(r)} · ceiling ${r.height.toFixed(2)} m`, area: `${areaM2(r)} m² (${areaFt2(r)} sq ft)`, condition: r.condition, photo: roomCover(r), notes: r.notes,
+    details: [['Flooring', r.flooring], ['Heating', r.heating], ['Windows', r.windows], ['Sockets', String(r.sockets)], ['Furniture', r.furnished]] }));
+
   const vNext = s.plans.filter(x => x.property === p.id).length + 1;
   return {
     ref: `PMP-${p.id}-${String(vNext).padStart(2, '0')}`, address: p.address, area: p.area, admin: adminName(p.admin),
@@ -63,7 +69,7 @@ export function buildPlan(s: S, L: ReturnType<typeof useLookups>, p: Property): 
       { title: 'Maintenance and action schedule', cols: ['Item', 'Agreed work', 'Responsible', 'Priority', 'Target date', 'Status'], rows: actRows, empty: 'No open work or actions.' },
       { title: 'Responsibilities', cols: ['What', 'Recorded responsible party'], rows: respRows, empty: NR },
     ],
-    missing,
+    missing, rooms: planRooms,
   };
 }
 
@@ -71,6 +77,12 @@ export function PlanSheet({ d, version, at }: { d: PlanData; version: number; at
   return <DocSheet kind="PROPERTY MANAGEMENT PLAN" to={{ label: 'Landlord', rows: d.landlord }} site={`${d.address}, ${d.area}`}
     meta={[['Plan ref', d.ref], ['Version', `v${version}`], ['Generated', at], ['Office Admin', d.admin]]}>
     <div className="doc-sec"><span className="doc-lab">Property and tenancy overview</span><div className="doc-kv two">{d.overview.flatMap(([k, v], i) => [<span key={'k' + i}>{k}</span>, <b key={'v' + i}>{v}</b>])}</div></div>
+    {d.rooms && d.rooms.length > 0 && <div className="doc-sec"><span className="doc-lab">Rooms ({d.rooms.length})</span>
+      <div className="doc-rooms">{d.rooms.map((r, i) => <div key={i} className="doc-room">
+        <div className="doc-room-ph" style={{ backgroundImage: `url(${r.photo})` }} />
+        <div className="stack" style={{ gap: 3 }}><b>{r.name}</b><span className="doc-room-meta">{r.floor} · {r.area} · {r.condition} condition</span><span className="doc-room-meta">{r.size}</span>
+          <div className="doc-room-kv">{r.details.flatMap(([k, v], j) => [<span key={'k' + j}>{k}</span>, <b key={'v' + j}>{v}</b>])}</div>{r.notes && <span className="doc-room-meta">{r.notes}</span>}</div>
+      </div>)}</div></div>}
     {d.tables.map(t => <div key={t.title} className="doc-sec"><span className="doc-lab">{t.title}</span>
       {t.rows.length ? <table className="doc-t sm"><thead><tr>{t.cols.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{t.rows.map((r, i) => <tr key={i}>{r.map((c, k) => <td key={k} className={c === NR || c === 'Not assigned' ? 'nr' : ''}>{c}</td>)}</tr>)}</tbody></table> : <span className="caption">{t.empty}</span>}</div>)}
     <p className="doc-note">Made from the records Genesis holds for this property on {at}. Anything not on file says “{NR}”. This version is saved and will not change. A new version is made when the plan is generated again.</p>
@@ -93,7 +105,7 @@ export function PlanModal({ p, view, onClose }: { p: Property; view?: PlanVersio
   const d = saved?.data ?? draft;
   if (step === 'check') return <Modal wide title="Generate Property Management Plan" sub={`${p.address}. Genesis fills the plan from the records it already holds. Check the gaps first.`} onClose={onClose}
     footer={<><Btn kind="outline" onClick={onClose}>Cancel</Btn><Btn icon={<Eye size={16} />} disabled={!!blocks.length} onClick={() => setStep('preview')}>Preview plan</Btn></>}>
-    <div className="plan-src">{[['Tenancy', s.tenants.some(t => t.property === p.id && t.status !== 'Moved out')], ['Compliance', s.safety.some(c => c.property === p.id)], ['Inspections', s.inspections.some(i => i.property === p.id)], ['Maintenance', s.jobs.some(j => j.property === p.id)], ['Responsibilities', true]].map(([k, ok]) => <div key={k as string}><span className={`tile ${ok ? 't-ok' : 't-warn'}`} style={{ width: 30, height: 30 }}>{ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}</span><b>{k}</b><span className="caption">{ok ? 'From records' : 'Nothing on file'}</span></div>)}</div>
+    <div className="plan-src">{[['Tenancy', s.tenants.some(t => t.property === p.id && t.status !== 'Moved out')], ['Compliance', s.safety.some(c => c.property === p.id)], ['Inspections', s.inspections.some(i => i.property === p.id)], ['Maintenance', s.jobs.some(j => j.property === p.id)], ['Rooms', s.rooms.some(r => r.property === p.id)], ['Responsibilities', true]].map(([k, ok]) => <div key={k as string}><span className={`tile ${ok ? 't-ok' : 't-warn'}`} style={{ width: 30, height: 30 }}>{ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}</span><b>{k}</b><span className="caption">{ok ? 'From records' : 'Nothing on file'}</span></div>)}</div>
     {draft.missing.length ? <div className="divlist">{draft.missing.map((m, i) => <div key={i} className="item"><span className={`tile ${m.blocks ? 't-err' : 't-warn'}`} style={{ width: 30, height: 30 }}><AlertTriangle size={14} /></span><span className="grow small">{m.text}</span><Chip tone={m.blocks ? 'err' : 'warn'} dot={false}>{m.blocks ? 'Must fix first' : 'Shown as not recorded'}</Chip></div>)}</div> : <Note tone="ok">Nothing missing. Every section has records.</Note>}
     {blocks.length ? <Note tone="err">Fix the items marked “Must fix first” before the plan can be made.</Note> : <Note tone="ok">Ready. Gaps will say “Not recorded”. Genesis never fills in dates, finished work or a compliant status that isn’t on file.</Note>}
   </Modal>;
@@ -110,7 +122,7 @@ export function PlanModal({ p, view, onClose }: { p: Property; view?: PlanVersio
 export function PlanCard({ p }: { p: Property }) {
   const s = useStore(); const [m, setM] = useState<'' | 'new' | PlanVersion>('');
   const vs = s.plans.filter(x => x.property === p.id);
-  return <Card title="Property Management Plan" sub="A PDF of this home’s tenancy, compliance, inspections, open work and who is responsible, made from its records."
+  return <Card title="Property Management Plan" sub="A PDF of this home’s tenancy, rooms with photos, compliance, inspections, open work and who is responsible, made from its records."
     action={<Btn sm icon={vs.length ? <RefreshCw size={14} /> : <FileText size={14} />} onClick={() => setM('new')}>{vs.length ? 'Generate new version' : 'Generate plan'}</Btn>}>
     {vs.length ? <div className="divlist">{vs.map((v, i) => <div key={v.id} className="item"><span className="tile t-brand" style={{ width: 32, height: 32 }}><FileText size={15} /></span><div className="stack grow"><b>{v.data.ref} · v{v.version}</b><span className="caption">Saved {v.at} · {v.by}</span></div>{i === 0 ? <Chip tone="ok">Latest</Chip> : <Chip tone="neutral" dot={false}>Earlier version kept</Chip>}<Btn sm kind="ghost" icon={<Eye size={14} />} onClick={() => setM(v)}>View</Btn></div>)}</div>
       : <Empty icon={<FileText size={22} />}>No plan yet. Generate one to download it as a PDF.</Empty>}

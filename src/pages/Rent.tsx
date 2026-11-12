@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { PoundSterling, AlertTriangle, Bell, Receipt, Landmark, ArrowRight, FileText, CheckCircle2, PauseCircle, Send, Wallet, Mail, Plus } from 'lucide-react';
+import { useNrl, nrlState, taxOf, blockOf, needsTax, recordOf } from '../nrl';
+import { BlockedModal } from './Tax';
 import { useStore, useLookups, money, rentStatus, type Lookups } from '../store';
 import { daysFrom, nowStamp, SUPERVISOR, type Landlord } from '../data';
 import { ME_NAME } from '../data';
@@ -23,7 +25,10 @@ export function payoutFor(s: S, l: Landlord) {
   const f = feeOf(collected, l.plan, s.vat); const fee = Math.round(f.net); const vat = Math.round(f.vat * 100) / 100;
   const bills = s.invoices.filter(i => i.toKind === 'Landlord' && i.to === l.id && i.paid < i.amount);
   const repairs = bills.reduce((a, i) => a + i.amount - i.paid, 0);
-  return { props, tenants, rows, due, collected, fee, vat, vatOn: f.on, repairs, bills, pay: Math.max(0, Math.round((collected - fee - vat - repairs) * 100) / 100), status: s.payouts[l.id] ?? 'Scheduled' };
+  const st = nrlState(); const pids = props.map(p => p.id);
+  /** Overseas tax: the accountant's figure for this month, kept back and paid to HMRC. A payout is blocked while something is missing. */
+  const tax = taxOf(st, l.id, pids); const block = blockOf(st, l.id, pids); const abroad = needsTax(st, l.id, pids) || recordOf(st, l.id).status !== 'UK resident';
+  return { props, tenants, rows, due, collected, fee, vat, vatOn: f.on, repairs, bills, tax, block, abroad, pay: Math.max(0, Math.round((collected - fee - vat - repairs - tax) * 100) / 100), status: s.payouts[l.id] ?? 'Scheduled' };
 }
 
 export function sendRentReminder(s: S, L: Lookups, rowId: string) {
@@ -41,7 +46,7 @@ export function Rent() {
 }
 
 function RentHome() {
-  const s = useStore(); const L = useLookups();
+  const s = useStore(); const L = useLookups(); useNrl(); const [blk, setBlk] = useState<string | null>(null);
   const [tab, setTab] = useState<'rent' | 'payouts' | 'owners' | 'invoices'>('rent'); const [rf, setRf] = useFlt(); const [f, setF] = useState<'all' | 'late' | 'part' | 'due' | 'paid'>('all'); const [q, setQ] = useState('');
   const [pay, setPay] = useState<string | null>(null); const [stmt, setStmt] = useState<string | null>(null); const [bulk, setBulk] = useState(false);
   const R = s.rent;
@@ -69,18 +74,19 @@ function RentHome() {
           <td>{r.reminders.length ? <span className="stack"><b className="small" style={{ color: 'var(--text-primary)' }}>{r.reminders.length} sent</b><span className="caption">last {r.reminders[0].at.replace(' 2026', '')}</span></span> : <span className="muted">None</span>}</td>
           <td onClick={e => e.stopPropagation()}>{left > 0 && <div className="flex" style={{ justifyContent: 'flex-end' }}><Btn sm kind="ghost" icon={<Bell size={14} />} onClick={() => sendRentReminder(s, L, r.id)}>Remind</Btn><Btn sm onClick={() => setPay(r.id)}>Record</Btn></div>}</td></tr>; })}
       </tbody></table>{!rows.length && <Empty>Nothing here.</Empty>}</div></Card>}
-    {tab === 'payouts' && <Card title="Landlord payouts" sub={`Rent collected, minus the LSP fee, VAT on the fee when it is on, and unpaid repair invoices. Homes leased by LSP are not here: their owners get lease payments. ${SUPERVISOR} pays landlords on ${PAY_DATE}. You can send the statement.`}>
-      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Homes</th><th>Rent collected</th><th>LSP fee</th><th>VAT on fee</th><th>Repairs taken off</th><th>To pay</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
+    {tab === 'payouts' && <Card title="Landlord payouts" sub={`Rent collected, minus the LSP fee, VAT on the fee when it is on, unpaid repair invoices, and overseas tax for landlords who live abroad (paid to HMRC). Homes leased by LSP are not here: their owners get lease payments. ${SUPERVISOR} pays landlords on ${PAY_DATE}. You can send the statement.`}>
+      <div className="tablewrap"><table className="t"><thead><tr><th>Landlord</th><th>Homes</th><th>Rent collected</th><th>LSP fee</th><th>VAT on fee</th><th>Repairs taken off</th><th>Tax kept back</th><th>To pay</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead><tbody>
         {lls.map(({ l, p }) => <tr key={l.id} onClick={() => setStmt(l.id)}>
           <td><span className="cell"><Avatar name={l.name} /><span className="stack"><b className="strong">{l.name}</b><span className="caption">{l.bank}</span></span></span></td><td>{p.props.length}</td>
-          <td>{money(p.collected)}<div className="caption">of {money(p.due)} due</div></td><td>{money(p.fee)}<div className="caption">{l.plan}%</div></td><td>{p.vatOn ? money(p.vat) : <span className="muted">Off</span>}</td><td>{p.repairs ? money(p.repairs) : '—'}</td><td><b style={{ fontSize: 14 }}>{money(p.pay)}</b></td>
-          <td><Chip tone={p.status === 'Paid' ? 'ok' : p.status === 'On hold' ? 'warn' : 'info'}>{p.status === 'Scheduled' ? 'Due ' + PAY_DATE.replace(' 2026', '') : p.status}</Chip></td>
+          <td>{money(p.collected)}<div className="caption">of {money(p.due)} due</div></td><td>{money(p.fee)}<div className="caption">{l.plan}%</div></td><td>{p.vatOn ? money(p.vat) : <span className="muted">Off</span>}</td><td>{p.repairs ? money(p.repairs) : '—'}</td><td>{p.tax ? <span className="stack"><b>{money(p.tax)}</b><span className="caption">to HMRC</span></span> : p.abroad ? <span className="caption">Abroad · none</span> : '—'}</td><td><b style={{ fontSize: 14 }}>{money(p.pay)}</b></td>
+          <td>{p.block && p.status !== 'Paid' ? <span className="stack"><Chip tone="err">Blocked</Chip><span className="caption">{p.block.reason}</span></span> : <Chip tone={p.status === 'Paid' ? 'ok' : p.status === 'On hold' ? 'warn' : 'info'}>{p.status === 'Scheduled' ? 'Due ' + PAY_DATE.replace(' 2026', '') : p.status}</Chip>}</td>
           <td onClick={e => e.stopPropagation()}><div className="flex" style={{ justifyContent: 'flex-end' }}><Btn sm kind="ghost" icon={<Send size={14} />} onClick={() => { s.log(`Sent October statement to ${l.name}`, 'Rent & Invoices'); s.toast(`Statement sent to ${l.email}`); }}>Statement</Btn></div></td></tr>)}
       </tbody></table></div></Card>}
     {tab === 'owners' && <OwnerPayments />}
     {tab === 'invoices' && <Card title="Invoices" sub="Landlord invoices are due straight away. Client invoices use the client's own terms. Click one to see what it's for." action={<Btn sm icon={<Plus size={14} />} onClick={() => s.go('rent', editorLink('invoice'))}>Create invoice</Btn>}><InvoiceTable list={invs} /></Card>}
     {pay && <RecordPay rowId={pay} onClose={() => setPay(null)} />}
     {stmt && <Statement id={stmt} onClose={() => setStmt(null)} />}
+    {blk && <BlockedModal l={s.landlords.find(x => x.id === blk)!} onClose={() => setBlk(null)} />}
     {bulk && <Modal title={`Send reminders to ${late.length} tenants?`} sub="Each tenant gets an email from Outlook. It is saved in their communication." onClose={() => setBulk(false)} footer={<><Btn kind="outline" onClick={() => setBulk(false)}>Cancel</Btn><Btn icon={<Bell size={16} />} onClick={() => { late.forEach(r => sendRentReminder(s, L, r.id)); setBulk(false); }}>Send reminders</Btn></>}>
       <div className="divlist">{late.map(r => <div key={r.id} className="item"><Avatar name={L.tenant(r.tenant)?.name} /><b className="grow">{L.tenant(r.tenant)?.name}</b><b>{money(r.amount - r.paid)}</b></div>)}</div></Modal>}
   </>;
@@ -96,12 +102,14 @@ function RecordPay({ rowId, onClose }: { rowId: string; onClose: () => void }) {
 }
 
 function Statement({ id, onClose }: { id: string; onClose: () => void }) {
-  const s = useStore(); const L = useLookups(); const l = s.landlords.find(x => x.id === id)!; const p = payoutFor(s, l);
+  const s = useStore(); const L = useLookups(); useNrl(); const l = s.landlords.find(x => x.id === id)!; const p = payoutFor(s, l); const [blk, setBlk] = useState(false);
   return <Drawer title={`October statement · ${l.name}`} sub={`${l.plan}% plan · paid to ${l.bank}`} onClose={onClose} footer={<><Btn kind="outline" icon={<Send size={16} />} onClick={() => { s.toast(`Statement sent to ${l.email}`); s.log(`Sent October statement to ${l.name}`, 'Rent & Invoices'); }}>Email statement</Btn></>}>
     <Card className="flat" title="Rent in"><div className="divlist">{p.rows.map(r => { const t = L.tenant(r.tenant); return <div key={r.id} className="item"><div className="stack grow"><b>{t?.name}</b><span className="caption">{L.prop(t?.property)?.address}{t?.room ? ' · ' + t.room : ''}</span></div><span className="caption">{money(r.paid)} of {money(r.amount)}</span><Chip tone={rentStatus(r).tone}>{rentStatus(r).label}</Chip></div>; })}</div></Card>
-    <Card className="flat"><KV rows={[['Rent collected', money(p.collected)], [`LSP fee (${l.plan}%)`, '− ' + money(p.fee)], ...(p.vatOn ? [[`VAT on LSP fee (${s.vat.rate}%)`, '− ' + money(p.vat)] as [string, string]] : []), ['Unpaid repair invoices', p.repairs ? '− ' + money(p.repairs) : '—'], ['To pay landlord', <b style={{ fontSize: 16 }}>{money(p.pay)}</b>], ['Pay date', PAY_DATE]]} /></Card>
+    <Card className="flat"><KV rows={[['Rent collected', money(p.collected)], [`LSP fee (${l.plan}%)`, '− ' + money(p.fee)], ...(p.vatOn ? [[`VAT on LSP fee (${s.vat.rate}%)`, '− ' + money(p.vat)] as [string, string]] : []), ['Unpaid repair invoices', p.repairs ? '− ' + money(p.repairs) : '—'], ...(p.abroad ? [['Overseas tax kept back (paid to HMRC)', p.tax ? '− ' + money(p.tax) : p.block ? 'Figure needed' : '—'] as [string, string]] : []), ['To pay landlord', <b style={{ fontSize: 16 }}>{money(p.pay)}</b>], ['Pay date', PAY_DATE]]} /></Card>
     {p.bills.length > 0 && <Note>Taken off: {p.bills.map(b => `${b.id} (${money(b.amount - b.paid)})`).join(', ')}.</Note>}
     {p.status === 'On hold' && <Note tone="warn">On hold. Rent from a tenant is still late, so the payout waits.</Note>}
+    {p.block && <Note tone="err">Payout blocked: {p.block.reason}. {p.block.fix} <button className="link" onClick={() => s.go('tax', l.id)}>Open the tax page</button></Note>}
+    {blk && <BlockedModal l={l} onClose={() => setBlk(false)} />}
   </Drawer>;
 }
 
