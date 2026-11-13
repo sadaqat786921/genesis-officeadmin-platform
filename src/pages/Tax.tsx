@@ -260,7 +260,7 @@ function OwnerTax({ id }: { id: string }) {
       meta={[['Lives in', rec.country ?? (rec.abroad === 'No' ? 'UK' : 'Not sure yet')], ['Decided', rec.decidedAt ? `${rec.decidedBy}, ${rec.decidedAt.split(',')[0]}` : 'Not yet'], ['HMRC letter', rec.letter?.ref ?? (rec.status === 'HMRC approved' ? 'Missing' : 'Not needed')], ['Homes', String(props.length + leased.length)]]} />
     <div className="grid g4">
       <Stat label={`${CURRENT_MONTH} tax`} value={money(taxOf(st, id, ids(props)))} tone={needsTax(st, id, ids(props)) && !rec.calcs.some(c => c.month === CURRENT_MONTH) ? 'err' : undefined} sub={needsTax(st, id, ids(props)) ? (rec.calcs.some(c => c.month === CURRENT_MONTH) ? 'from the accountant' : 'figure needed') : 'none kept back'} />
-      <Stat label="Kept back this tax year" value={money(r2(rec.calcs.reduce((a, c) => a + c.tax, 0) + leaseRows.reduce((a, x) => a + leaseTaxOf(st, id, x), 0)))} sub="since 6 Apr 2026" />
+      <Stat label="Kept back this tax year" value={money(r2(rec.calcs.reduce((a, c) => a + c.tax, 0) + leaseRows.filter(x => daysFrom(x.due) <= 0).reduce((a, x) => a + leaseTaxOf(st, id, x), 0)))} sub="since 6 Apr 2026" />
       <Stat label="Lease rent tax" value={leased.length ? money(leaseTaxOf(st, id, { amount: leased[0].lease?.rent ?? 0 })) : '—'} sub={leased.length ? 'each month' : 'no leased home'} />
       <Stat label="Yearly certificate" value="5 Jul 2027" sub="sent to the landlord" />
     </div>
